@@ -8,6 +8,7 @@
 //   3. discovering projects VS Code already knows about, for one-click import
 
 mod sessions;
+mod usage;
 mod vscode;
 
 use std::collections::HashSet;
@@ -17,6 +18,7 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
@@ -32,6 +34,12 @@ struct Project {
     added: u64,
     #[serde(default)]
     open_count: u32,
+    /// hex accent colour chosen by the user, e.g. "#f38ec4"
+    #[serde(default)]
+    color: Option<String>,
+    /// custom icon as a `data:image/png;base64,…` URL
+    #[serde(default)]
+    icon: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Default, Debug)]
@@ -163,7 +171,18 @@ fn upsert_new(store: &mut Store, path: &str, opened: bool) {
         last_opened: if opened { Some(now_ms()) } else { None },
         added: now_ms(),
         open_count: if opened { 1 } else { 0 },
+        color: None,
+        icon: None,
     });
+}
+
+/// Index where the favourites block ends (== the first non-favourite).
+fn favorites_boundary(store: &Store) -> usize {
+    store
+        .projects
+        .iter()
+        .position(|p| !p.favorite)
+        .unwrap_or(store.projects.len())
 }
 
 #[tauri::command]
@@ -202,8 +221,87 @@ fn remove_project(path: String, state: State<AppState>) -> Result<Vec<Project>, 
 #[tauri::command]
 fn toggle_favorite(path: String, state: State<AppState>) -> Result<Vec<Project>, String> {
     let mut store = state.store.lock().unwrap();
+    if let Some(idx) = store.projects.iter().position(|p| p.path == path) {
+        let mut proj = store.projects.remove(idx);
+        proj.favorite = !proj.favorite;
+        // Favourited → bottom of the favourites block; unfavourited → top of the
+        // rest. Both land at the favourites/others boundary.
+        let at = favorites_boundary(&store);
+        store.projects.insert(at, proj);
+    }
+    save_store(&state.store_path, &store)?;
+    Ok(store.projects.clone())
+}
+
+/// Set the manual order of every project. Unknown paths are ignored; any project
+/// missing from `order` keeps its relative place at the end.
+#[tauri::command]
+fn reorder_projects(order: Vec<String>, state: State<AppState>) -> Result<Vec<Project>, String> {
+    let rank: std::collections::HashMap<String, usize> =
+        order.into_iter().enumerate().map(|(i, p)| (p, i)).collect();
+    let mut store = state.store.lock().unwrap();
+    store
+        .projects
+        .sort_by_key(|p| *rank.get(&p.path).unwrap_or(&usize::MAX));
+    save_store(&state.store_path, &store)?;
+    Ok(store.projects.clone())
+}
+
+#[tauri::command]
+fn set_project_color(
+    path: String,
+    color: Option<String>,
+    state: State<AppState>,
+) -> Result<Vec<Project>, String> {
+    let color = color.filter(|c| {
+        c.starts_with('#')
+            && (c.len() == 4 || c.len() == 7)
+            && c[1..].chars().all(|ch| ch.is_ascii_hexdigit())
+    });
+    let mut store = state.store.lock().unwrap();
     if let Some(p) = store.projects.iter_mut().find(|p| p.path == path) {
-        p.favorite = !p.favorite;
+        p.color = color;
+    }
+    save_store(&state.store_path, &store)?;
+    Ok(store.projects.clone())
+}
+
+/// Load an image file, square-crop and shrink it to 128px, and store it on the
+/// project as an inline PNG data URL.
+#[tauri::command]
+fn set_project_icon(
+    path: String,
+    source: String,
+    state: State<AppState>,
+) -> Result<Vec<Project>, String> {
+    let bytes = fs::read(&source).map_err(|e| format!("Could not read image: {e}"))?;
+    if bytes.len() > 16 * 1024 * 1024 {
+        return Err("Image is too large (max 16 MB).".to_string());
+    }
+    let img = image::load_from_memory(&bytes).map_err(|_| "That file is not a readable image.".to_string())?;
+    let icon = img.resize_to_fill(128, 128, image::imageops::FilterType::Lanczos3);
+
+    let mut png: Vec<u8> = Vec::new();
+    icon.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    let data_url = format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(&png)
+    );
+
+    let mut store = state.store.lock().unwrap();
+    if let Some(p) = store.projects.iter_mut().find(|p| p.path == path) {
+        p.icon = Some(data_url);
+    }
+    save_store(&state.store_path, &store)?;
+    Ok(store.projects.clone())
+}
+
+#[tauri::command]
+fn clear_project_icon(path: String, state: State<AppState>) -> Result<Vec<Project>, String> {
+    let mut store = state.store.lock().unwrap();
+    if let Some(p) = store.projects.iter_mut().find(|p| p.path == path) {
+        p.icon = None;
     }
     save_store(&state.store_path, &store)?;
     Ok(store.projects.clone())
@@ -322,6 +420,67 @@ fn discover_vscode_projects(state: State<AppState>) -> Result<Vec<Discovered>, S
     Ok(out)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn p(path: &str, fav: bool) -> Project {
+        Project {
+            path: path.into(),
+            name: basename(path),
+            favorite: fav,
+            last_opened: None,
+            added: 0,
+            open_count: 0,
+            color: None,
+            icon: None,
+        }
+    }
+
+    fn paths(store: &Store) -> Vec<&str> {
+        store.projects.iter().map(|p| p.path.as_str()).collect()
+    }
+
+    #[test]
+    fn reorder_applies_given_order_and_keeps_unlisted_at_end() {
+        let mut store = Store::default();
+        store.projects = vec![p("a", false), p("b", false), p("c", false), p("d", false)];
+
+        let rank: std::collections::HashMap<String, usize> = ["c", "a", "b"]
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.to_string(), i))
+            .collect();
+        store
+            .projects
+            .sort_by_key(|p| *rank.get(&p.path).unwrap_or(&usize::MAX));
+
+        assert_eq!(paths(&store), ["c", "a", "b", "d"]);
+    }
+
+    #[test]
+    fn favouriting_moves_to_end_of_favourites_block() {
+        let mut store = Store::default();
+        store.projects = vec![p("f1", true), p("f2", true), p("x", false), p("y", false)];
+
+        // favourite "y"
+        let idx = store.projects.iter().position(|p| p.path == "y").unwrap();
+        let mut proj = store.projects.remove(idx);
+        proj.favorite = true;
+        let at = favorites_boundary(&store);
+        store.projects.insert(at, proj);
+        assert_eq!(paths(&store), ["f1", "f2", "y", "x"]);
+
+        // unfavourite "f1" → top of the others block
+        let idx = store.projects.iter().position(|p| p.path == "f1").unwrap();
+        let mut proj = store.projects.remove(idx);
+        proj.favorite = false;
+        let at = favorites_boundary(&store);
+        store.projects.insert(at, proj);
+        assert_eq!(paths(&store), ["f2", "y", "f1", "x"]);
+    }
+}
+
 // ── setup ─────────────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -376,6 +535,10 @@ pub fn run() {
             add_projects,
             remove_project,
             toggle_favorite,
+            reorder_projects,
+            set_project_color,
+            set_project_icon,
+            clear_project_icon,
             touch_project,
             reveal_in_file_manager,
             discover_vscode_projects,
@@ -394,6 +557,7 @@ pub fn run() {
             sessions::project_usage,
             sessions::usage_overview,
             sessions::usage_windows,
+            usage::claude_usage,
             get_limits,
             set_limits,
         ])

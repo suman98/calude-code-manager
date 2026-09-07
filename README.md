@@ -83,10 +83,20 @@ tracked separately because they dwarf everything else.
 
 ## Features
 
-- **Recents + favorites** — every project you open is tracked, most-recent
-  first; star the ones you live in. Reopens your last project on launch.
+- **Manual project order** — the list is in the order you arrange it. Drag a row
+  to sort (favourites and non-favourites reorder within their own group);
+  selecting a project never moves it. Favouriting sends a project to the bottom
+  of the favourites block; unfavouriting to the top of the rest. The drag is
+  built on pointer events, not the HTML5 drag-and-drop API — WKWebView (the
+  macOS webview) does not fire `dragover`/`drop` on plain elements.
+- **Per-project colour and icon** — the `⋯` menu on each row sets an accent
+  colour (used for the avatar always, and the whole row highlight when active)
+  and uploads a custom icon. Icons are square-cropped and shrunk to 128px, then
+  stored inline in `projects.json` — no loose files, no asset-protocol config.
+- **Favourites** — star the projects you live in; they pin above the rest.
 - **Import from VS Code** — one click pulls in folders VS Code already remembers
   (`storage.json`), filtered to ones that still exist.
+- Reopens your last-used project on launch.
 - **Three-pane split** — projects, chats and Claude Code. Drag the handles between
   panes to resize (double-click a handle to snap it back to its minimum); widths
   and collapsed state persist. Collapse either side pane with the two buttons in

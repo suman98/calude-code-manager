@@ -8,6 +8,8 @@ export interface Project {
   last_opened: number | null;
   added: number;
   open_count: number;
+  color: string | null;
+  icon: string | null;
 }
 
 export interface Discovered {
@@ -83,6 +85,19 @@ export interface UsageWindows {
 
 export type VscodeMode = "claude" | "code";
 
+/** Server-reported utilisation, the same figures Claude Code's /usage prints. */
+export interface LiveWindow {
+  utilization: number;
+  resets_at: number | null;
+}
+
+export interface LiveUsage {
+  five_hour: LiveWindow | null;
+  seven_day: LiveWindow | null;
+  seven_day_opus: LiveWindow | null;
+  fetched_at: number;
+}
+
 export interface Limits {
   session_tokens: number | null;
   weekly_tokens: number | null;
@@ -100,6 +115,12 @@ export const api = {
   addMany: (paths: string[]) => invoke<Project[]>("add_projects", { paths }),
   remove: (path: string) => invoke<Project[]>("remove_project", { path }),
   toggleFavorite: (path: string) => invoke<Project[]>("toggle_favorite", { path }),
+  reorder: (order: string[]) => invoke<Project[]>("reorder_projects", { order }),
+  setColor: (path: string, color: string | null) =>
+    invoke<Project[]>("set_project_color", { path, color }),
+  setIcon: (path: string, source: string) =>
+    invoke<Project[]>("set_project_icon", { path, source }),
+  clearIcon: (path: string) => invoke<Project[]>("clear_project_icon", { path }),
   touch: (path: string) => invoke<Project[]>("touch_project", { path }),
   reveal: (path: string) => invoke<void>("reveal_in_file_manager", { path }),
   discover: () => invoke<Discovered[]>("discover_vscode_projects"),
@@ -119,6 +140,7 @@ export const api = {
   listSessions: (path: string) => invoke<SessionSummary[]>("list_sessions", { path }),
   projectUsage: (path: string) => invoke<Totals>("project_usage", { path }),
   usageOverview: () => invoke<UsageOverview>("usage_overview"),
+  claudeUsage: () => invoke<LiveUsage>("claude_usage"),
   usageWindows: (limits: Limits) =>
     invoke<UsageWindows>("usage_windows", {
       sessionLimit: limits.session_tokens,
@@ -146,5 +168,15 @@ export interface Rect {
 
 export async function pickFolder(): Promise<string | null> {
   const result = await openDialog({ directory: true, multiple: false, title: "Add a project folder" });
+  return typeof result === "string" ? result : null;
+}
+
+export async function pickImage(): Promise<string | null> {
+  const result = await openDialog({
+    directory: false,
+    multiple: false,
+    title: "Choose a project icon",
+    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"] }],
+  });
   return typeof result === "string" ? result : null;
 }

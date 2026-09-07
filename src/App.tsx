@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { api, pickFolder, type Project, type ServerStatus, type VscodeMode } from "./lib/api";
+import {
+  api,
+  pickFolder,
+  pickImage,
+  type Project,
+  type ServerStatus,
+  type VscodeMode,
+} from "./lib/api";
 import { Sidebar, flatList } from "./components/Sidebar";
 import { VscodeView } from "./components/VscodeView";
 import { ImportDialog } from "./components/ImportDialog";
@@ -144,6 +151,47 @@ export default function App() {
     }
   }, []);
 
+  const reorderProjects = useCallback(
+    (order: string[]) => {
+      // Reflect the drop immediately; the backend confirms the persisted order.
+      setProjects((cur) => {
+        const rank = new Map(order.map((p, i) => [p, i]));
+        return [...cur].sort(
+          (a, b) => (rank.get(a.path) ?? 1e9) - (rank.get(b.path) ?? 1e9),
+        );
+      });
+      api.reorder(order).then(setProjects).catch((e) => flash(String(e)));
+    },
+    [flash],
+  );
+
+  const setProjectColor = useCallback(
+    (p: Project, color: string | null) => {
+      api.setColor(p.path, color).then(setProjects).catch((e) => flash(String(e)));
+    },
+    [flash],
+  );
+
+  const uploadProjectIcon = useCallback(
+    async (p: Project) => {
+      const src = await pickImage();
+      if (!src) return;
+      try {
+        setProjects(await api.setIcon(p.path, src));
+      } catch (e) {
+        flash(String(e));
+      }
+    },
+    [flash],
+  );
+
+  const clearProjectIcon = useCallback(
+    (p: Project) => {
+      api.clearIcon(p.path).then(setProjects).catch((e) => flash(String(e)));
+    },
+    [flash],
+  );
+
   const addFolder = useCallback(async () => {
     const dir = await pickFolder();
     if (!dir) return;
@@ -258,6 +306,10 @@ export default function App() {
             onSelect={selectProject}
             onToggleFavorite={toggleFavorite}
             onRemove={removeProject}
+            onReorder={reorderProjects}
+            onColor={setProjectColor}
+            onUploadIcon={uploadProjectIcon}
+            onClearIcon={clearProjectIcon}
             onAdd={addFolder}
             onImport={() => setShowImport(true)}
             onShowUsage={() => setShowUsage(true)}
