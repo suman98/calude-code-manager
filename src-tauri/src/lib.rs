@@ -7,6 +7,7 @@
 //      (see `vscode.rs`)
 //   3. discovering projects VS Code already knows about, for one-click import
 
+mod sessions;
 mod vscode;
 
 use std::collections::HashSet;
@@ -33,9 +34,19 @@ struct Project {
     open_count: u32,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Default, Debug)]
+struct Limits {
+    /// tokens the user's plan allows per rolling 5-hour window
+    session_tokens: Option<u64>,
+    /// tokens the user's plan allows per rolling 7-day window
+    weekly_tokens: Option<u64>,
+}
+
 #[derive(Serialize, Deserialize, Default)]
 struct Store {
     projects: Vec<Project>,
+    #[serde(default)]
+    limits: Limits,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -215,6 +226,26 @@ fn touch_project(path: String, state: State<AppState>) -> Result<Vec<Project>, S
 }
 
 #[tauri::command]
+fn get_limits(state: State<AppState>) -> Limits {
+    state.store.lock().unwrap().limits
+}
+
+#[tauri::command]
+fn set_limits(
+    session_tokens: Option<u64>,
+    weekly_tokens: Option<u64>,
+    state: State<AppState>,
+) -> Result<Limits, String> {
+    let mut store = state.store.lock().unwrap();
+    store.limits = Limits {
+        session_tokens: session_tokens.filter(|v| *v > 0),
+        weekly_tokens: weekly_tokens.filter(|v| *v > 0),
+    };
+    save_store(&state.store_path, &store)?;
+    Ok(store.limits)
+}
+
+#[tauri::command]
 fn reveal_in_file_manager(path: String) -> Result<(), String> {
     let path = normalize(&path);
     #[cfg(target_os = "macos")]
@@ -300,6 +331,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(vscode::Vscode::default())
+        .manage(sessions::Sessions::default())
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 let vscode = window.state::<vscode::Vscode>();
@@ -355,6 +387,13 @@ pub fn run() {
             vscode::set_vscode_bounds,
             vscode::hide_vscode,
             vscode::close_vscode,
+            vscode::send_vscode_command,
+            sessions::list_sessions,
+            sessions::project_usage,
+            sessions::usage_overview,
+            sessions::usage_windows,
+            get_limits,
+            set_limits,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

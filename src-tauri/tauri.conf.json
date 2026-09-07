@@ -13,10 +13,10 @@
     "windows": [
       {
         "title": "Easy Switch",
-        "width": 760,
-        "height": 620,
-        "minWidth": 480,
-        "minHeight": 400,
+        "width": 1280,
+        "height": 840,
+        "minWidth": 900,
+        "minHeight": 560,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
       }

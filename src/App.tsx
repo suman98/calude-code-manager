@@ -4,6 +4,8 @@ import { api, pickFolder, type Project, type ServerStatus } from "./lib/api";
 import { Sidebar, flatList } from "./components/Sidebar";
 import { VscodeView } from "./components/VscodeView";
 import { ImportDialog } from "./components/ImportDialog";
+import { ChatsPanel } from "./components/ChatsPanel";
+import { UsageDialog } from "./components/UsageDialog";
 import "./App.css";
 
 const INITIAL_STATUS: ServerStatus = { phase: "starting", message: "Starting…", port: null };
@@ -16,6 +18,7 @@ export default function App() {
   const [openIds, setOpenIds] = useState<string[]>([]);
   const [status, setStatus] = useState<ServerStatus>(INITIAL_STATUS);
   const [showImport, setShowImport] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -48,7 +51,7 @@ export default function App() {
     return () => {
       alive = false;
       clearInterval(poll);
-      void un.then((f) => f());
+      void un.then((f) => f()).catch(() => {});
     };
   }, []);
 
@@ -131,7 +134,7 @@ export default function App() {
   // iframe, the browser hands keys straight to it, so this never interferes.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (showImport) return;
+      if (showImport || showUsage) return;
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -165,7 +168,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showImport, flat, selectedIndex, query, selectProject, toggleFavorite, removeProject]);
+  }, [showImport, showUsage, flat, selectedIndex, query, selectProject, toggleFavorite, removeProject]);
 
   return (
     <div className="app">
@@ -184,9 +187,19 @@ export default function App() {
         onRemove={removeProject}
         onAdd={addFolder}
         onImport={() => setShowImport(true)}
+        onShowUsage={() => setShowUsage(true)}
         searchRef={searchRef}
         rowRefs={rowRefs}
       />
+
+      {activeProject && (
+        <ChatsPanel
+          key={activeProject.path}
+          project={activeProject}
+          serverReady={status.phase === "ready"}
+          onShowUsage={() => setShowUsage(true)}
+        />
+      )}
 
       <main className="main">
         {error && <div className="notice error">{error}</div>}
@@ -196,7 +209,7 @@ export default function App() {
           <VscodeView
             project={activeProject}
             status={status}
-            dialogOpen={showImport}
+            dialogOpen={showImport || showUsage}
             onRetry={retryServer}
           />
         )}
@@ -205,6 +218,7 @@ export default function App() {
       {showImport && (
         <ImportDialog onClose={() => setShowImport(false)} onImported={(next) => setProjects(next)} />
       )}
+      {showUsage && <UsageDialog activePath={activeId} onClose={() => setShowUsage(false)} />}
     </div>
   );
 }

@@ -370,6 +370,31 @@ pub fn hide_vscode(vscode: State<Vscode>) {
     }
 }
 
+/// Ask the embedded helper extension to do something (start a new chat, open a
+/// past session). The helper polls this file, so no extra IPC surface is needed.
+#[tauri::command]
+pub fn send_vscode_command(
+    app: AppHandle,
+    command: String,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    let data_dir = server_data_dir(&app);
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let payload = serde_json::json!({
+        "nonce": nonce,
+        "command": command,
+        "sessionId": session_id,
+    });
+    std::fs::write(
+        data_dir.join(COMMAND_FILE),
+        serde_json::to_string(&payload).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn close_vscode(vscode: State<Vscode>, path: String) {
     if let Some(v) = vscode.views.lock().unwrap().remove(&path) {
@@ -408,7 +433,7 @@ const HELPER_PACKAGE_JSON: &str = r#"{
   "displayName": "Easy Switch Layout",
   "description": "Opens Claude Code as the only surface in the window.",
   "publisher": "easyswitch",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "engines": { "vscode": "^1.94.0" },
   "main": "./extension.js",
   "activationEvents": ["onStartupFinished"],
@@ -422,6 +447,12 @@ const HELPER_PACKAGE_JSON: &str = r#"{
 "#;
 
 const HELPER_EXTENSION_JS: &str = r#"const vscode = require("vscode");
+const fs = require("fs");
+const path = require("path");
+
+// Easy Switch drops commands here; <server-data-dir>/easy-switch-cmd.json sits
+// two levels above this extension folder.
+const COMMAND_FILE = path.resolve(__dirname, "..", "..", "easy-switch-cmd.json");
 
 // VS Code for the Web keeps user settings in browser storage, not in the
 // server's user-data-dir, so the layout has to be applied through the API.
@@ -494,11 +525,15 @@ async function collapseChrome() {
   await run("workbench.action.closePanel");
 }
 
+async function claudeReady() {
+  const cmds = await vscode.commands.getCommands(true);
+  return cmds.includes("claude-vscode.primaryEditor.open");
+}
+
 async function openClaude() {
   for (let i = 0; i < 60; i++) {
     if (claudeTabOpen()) return true;
-    const cmds = await vscode.commands.getCommands(true);
-    if (cmds.includes("claude-vscode.primaryEditor.open")) {
+    if (await claudeReady()) {
       await run("workbench.action.closeAllEditors");
       await run("claude-vscode.primaryEditor.open");
       await sleep(600);
@@ -507,6 +542,49 @@ async function openClaude() {
     await sleep(500);
   }
   return false;
+}
+
+// `claude-vscode.primaryEditor.open(sessionId, prompt)` resumes an existing
+// session, or starts a fresh one when no id is given. One chat at a time keeps
+// it consistent with the app's own project switcher.
+async function openSession(sessionId) {
+  if (!(await claudeReady())) return;
+  await run("workbench.action.closeAllEditors");
+  try {
+    await vscode.commands.executeCommand(
+      "claude-vscode.primaryEditor.open",
+      sessionId || undefined,
+    );
+  } catch (_) {}
+  await sleep(400);
+  await collapseChrome();
+}
+
+async function handleCommand(msg) {
+  if (msg.command === "newChat" || msg.command === "openSession") {
+    await openSession(msg.sessionId);
+  }
+}
+
+function watchCommands(context) {
+  let lastNonce = null;
+  const tick = () => {
+    let msg;
+    try {
+      msg = JSON.parse(fs.readFileSync(COMMAND_FILE, "utf8"));
+    } catch (_) {
+      return;
+    }
+    if (!msg || msg.nonce === lastNonce) return;
+    // Skip whatever was already in the file when this window opened.
+    const first = lastNonce === null;
+    lastNonce = msg.nonce;
+    if (first) return;
+    handleCommand(msg).catch(() => {});
+  };
+  tick();
+  const timer = setInterval(tick, 400);
+  context.subscriptions.push({ dispose: () => clearInterval(timer) });
 }
 
 async function activate(context) {
@@ -520,6 +598,8 @@ async function activate(context) {
     await run("workbench.action.reloadWindow");
     return;
   }
+
+  watchCommands(context);
 
   await collapseChrome();
   await sleep(300);
@@ -587,9 +667,10 @@ fn install_claude_extension(data_dir: &PathBuf) -> Result<(), String> {
     }
 }
 
+const COMMAND_FILE: &str = "easy-switch-cmd.json";
 const HELPER_ID: &str = "easyswitch.easy-switch-layout";
-const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.2";
-const HELPER_VERSION: &str = "1.0.2";
+const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.3";
+const HELPER_VERSION: &str = "1.0.3";
 
 /// Drop in a tiny workspace extension that hides the IDE chrome and opens
 /// Claude Code in the editor area on every window.
@@ -618,11 +699,25 @@ fn write_helper_extension(data_dir: &PathBuf) {
     let _ = std::fs::write(dir.join("extension.js"), HELPER_EXTENSION_JS);
 
     let manifest_path = ext_root.join("extensions.json");
-    let mut entries: Vec<serde_json::Value> = std::fs::read_to_string(&manifest_path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
+    let mut entries: Vec<serde_json::Value> = match std::fs::read_to_string(&manifest_path) {
+        // A manifest we cannot parse is not ours to rewrite — replacing it would
+        // drop every other installed extension.
+        Ok(text) => match serde_json::from_str(&text) {
+            Ok(v) => v,
+            Err(_) => return,
+        },
+        Err(_) => Vec::new(),
+    };
     entries.retain(|e| e.pointer("/identifier/id").and_then(|v| v.as_str()) != Some(HELPER_ID));
+
+    // Never publish a manifest that forgets the Claude Code extension.
+    if claude_extension_installed(data_dir)
+        && !entries.iter().any(|e| {
+            e.pointer("/identifier/id").and_then(|v| v.as_str()) == Some("anthropic.claude-code")
+        })
+    {
+        return;
+    }
 
     let fs_path = dir.to_string_lossy().to_string();
     entries.push(serde_json::json!({
@@ -649,7 +744,12 @@ fn write_helper_extension(data_dir: &PathBuf) {
         }
     }));
 
+    // Write through a temp file: the VS Code server reads this manifest and a
+    // torn write loses extensions.
     if let Ok(text) = serde_json::to_string(&entries) {
-        let _ = std::fs::write(&manifest_path, text);
+        let tmp = ext_root.join("extensions.json.easy-switch.tmp");
+        if std::fs::write(&tmp, text).is_ok() && std::fs::rename(&tmp, &manifest_path).is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
     }
 }

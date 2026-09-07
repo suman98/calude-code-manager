@@ -35,6 +35,25 @@ export function relativeTime(ms?: number | null): string {
   return "";
 }
 
+export function formatTokens(n: number): string {
+  if (!n) return "0";
+  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(n < 10_000_000_000 ? 1 : 0) + "B";
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(n < 10_000 ? 1 : 0) + "K";
+  return String(n);
+}
+
+export function formatCount(n: number): string {
+  return n.toLocaleString();
+}
+
+export function shortModel(model: string): string {
+  return model
+    .replace(/^claude-/, "")
+    .replace(/-\d{8}$/, "")
+    .replace(/-latest$/, "");
+}
+
 /** Subsequence fuzzy match. Returns a score (higher is better) or -1. */
 export function fuzzyScore(query: string, target: string): number {
   if (!query) return 0;

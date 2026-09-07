@@ -37,6 +37,31 @@ Two implementation notes worth keeping:
 The React layer is only the sidebar and window chrome; it tells Rust where to
 place the VS Code webview and which project to show.
 
+## Chats and usage
+
+Both are read from Claude Code's own transcript store,
+`~/.claude/projects/<slug>/<session>.jsonl`. The slug is a lossy encoding of the
+project path, so the app matches projects by the `cwd` recorded inside each
+transcript rather than trying to reverse it.
+
+- **Chats column** — every past Claude Code chat for the selected project, newest
+  first, with its AI-generated title, age, message count and model. Clicking one
+  reopens that exact session; **+ New** starts a fresh one. Both work by asking
+  the helper extension to run `claude-vscode.primaryEditor.open`, optionally with
+  a session id.
+- **Usage meters** — rolling 5-hour and 7-day windows, anchored on the first turn
+  inside each window, with real reset countdowns.
+
+**A caveat on percentages.** The 5hr/weekly percentages Claude Code shows in
+`/usage` come from Anthropic's API and are *not* stored on disk — transcripts
+record `rateLimits: null`, and `quotaLimits` appears only on 429 rejections. So
+these meters measure your own token consumption in those windows. Enter your
+plan's token allowance under **Usage → Window limits** to turn them into
+percentages; until then they show token counts and window progress.
+
+Tokens counted for a window are input + output + cache writes; cache reads are
+tracked separately because they dwarf everything else.
+
 ## Features
 
 - **Recents + favorites** — every project you open is tracked, most-recent

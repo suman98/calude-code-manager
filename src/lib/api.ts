@@ -17,6 +17,75 @@ export interface Discovered {
   modified: number;
 }
 
+export interface SessionSummary {
+  id: string;
+  title: string;
+  last_prompt: string;
+  started: string | null;
+  updated: string | null;
+  git_branch: string | null;
+  models: string[];
+  messages: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+}
+
+export interface Totals {
+  sessions: number;
+  messages: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+}
+
+export interface ModelUsage {
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  messages: number;
+}
+
+export interface ProjectUsage {
+  path: string;
+  name: string;
+  totals: Totals;
+  last_used: string | null;
+}
+
+export interface UsageOverview {
+  totals: Totals;
+  projects: ProjectUsage[];
+  by_model: ModelUsage[];
+}
+
+export interface WindowUsage {
+  tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  messages: number;
+  window_start: number | null;
+  resets_at: number | null;
+  limit: number | null;
+}
+
+export interface UsageWindows {
+  session: WindowUsage;
+  weekly: WindowUsage;
+  now: number;
+}
+
+export interface Limits {
+  session_tokens: number | null;
+  weekly_tokens: number | null;
+}
+
 export interface ServerStatus {
   phase: "idle" | "starting" | "ready" | "error";
   message: string;
@@ -43,6 +112,25 @@ export const api = {
   setVscodeBounds: (b: Rect) => invoke<void>("set_vscode_bounds", { ...b }),
   hideVscode: () => invoke<void>("hide_vscode"),
   closeVscode: (path: string) => invoke<void>("close_vscode", { path }),
+
+  // chats + usage, read from Claude Code's own transcript store
+  listSessions: (path: string) => invoke<SessionSummary[]>("list_sessions", { path }),
+  projectUsage: (path: string) => invoke<Totals>("project_usage", { path }),
+  usageOverview: () => invoke<UsageOverview>("usage_overview"),
+  usageWindows: (limits: Limits) =>
+    invoke<UsageWindows>("usage_windows", {
+      sessionLimit: limits.session_tokens,
+      weeklyLimit: limits.weekly_tokens,
+    }),
+  getLimits: () => invoke<Limits>("get_limits"),
+  setLimits: (limits: Limits) =>
+    invoke<Limits>("set_limits", {
+      sessionTokens: limits.session_tokens,
+      weeklyTokens: limits.weekly_tokens,
+    }),
+  newChat: () => invoke<void>("send_vscode_command", { command: "newChat", sessionId: null }),
+  openSession: (sessionId: string) =>
+    invoke<void>("send_vscode_command", { command: "openSession", sessionId }),
 };
 
 export interface Rect {

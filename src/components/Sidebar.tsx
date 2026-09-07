@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { type Project } from "../lib/api";
 import { fuzzyScore, parentPath, relativeTime } from "../lib/format";
+import { UsageMeters } from "./UsageMeters";
 
 interface Props {
   projects: Project[];
@@ -14,6 +15,7 @@ interface Props {
   onRemove: (p: Project) => void;
   onAdd: () => void;
   onImport: () => void;
+  onShowUsage: () => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
   rowRefs: React.RefObject<(HTMLDivElement | null)[]>;
 }
@@ -61,6 +63,7 @@ export function Sidebar({
   onRemove,
   onAdd,
   onImport,
+  onShowUsage,
   searchRef,
   rowRefs,
 }: Props) {
@@ -171,6 +174,8 @@ export function Sidebar({
           </section>
         ))}
       </div>
+
+      <UsageMeters onOpenDetails={onShowUsage} />
 
       <div className="sidebar-foot">
         <button className="ghost-btn" onClick={onImport}>
