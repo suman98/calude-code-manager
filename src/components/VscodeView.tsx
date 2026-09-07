@@ -1,21 +1,38 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Project, type ServerStatus } from "../lib/api";
 import { parentPath } from "../lib/format";
+import { PanelLeftIcon, PanelChatsIcon } from "./icons";
 
 interface Props {
   project: Project | null;
   status: ServerStatus;
-  dialogOpen: boolean;
+  /** hide the native webview while a dialog is up or a pane is being dragged */
+  suppressed: boolean;
+  firstPane: boolean;
+  showProjects: boolean;
+  showChats: boolean;
+  onToggleProjects: () => void;
+  onToggleChats: () => void;
   onRetry: () => void;
 }
 
-export function VscodeView({ project, status, dialogOpen, onRetry }: Props) {
+export function VscodeView({
+  project,
+  status,
+  suppressed,
+  firstPane,
+  showProjects,
+  showChats,
+  onToggleProjects,
+  onToggleChats,
+  onRetry,
+}: Props) {
   const slotRef = useRef<HTMLDivElement | null>(null);
   const [mountErr, setMountErr] = useState<string | null>(null);
 
   const activeId = project?.path ?? null;
   const ready = status.phase === "ready";
-  const shouldShow = ready && !!activeId && !dialogOpen;
+  const shouldShow = ready && !!activeId && !suppressed;
 
   const pushBounds = useCallback(
     (mount: boolean) => {
@@ -84,19 +101,46 @@ export function VscodeView({ project, status, dialogOpen, onRetry }: Props) {
 
   return (
     <div className="pane">
-      {project ? (
-        <header className="pane-head" data-tauri-drag-region>
+      <header
+        className={"pane-top pane-head" + (firstPane ? " with-traffic" : "")}
+        data-tauri-drag-region
+      >
+        <div className="pane-toggles">
+          <button
+            className={"toggle-btn" + (showProjects ? " on" : "")}
+            onClick={onToggleProjects}
+            title="Toggle projects (⌘1)"
+            aria-pressed={showProjects}
+          >
+            <PanelLeftIcon />
+          </button>
+          <button
+            className={"toggle-btn" + (showChats ? " on" : "")}
+            onClick={onToggleChats}
+            title="Toggle chat history (⌘2)"
+            aria-pressed={showChats}
+          >
+            <PanelChatsIcon />
+          </button>
+        </div>
+
+        {project && (
           <div className="pane-title" data-tauri-drag-region>
             <span className="pane-name">{project.name}</span>
             <span className="pane-path">{parentPath(project.path)}</span>
           </div>
-          <div className="pane-actions">
+        )}
+
+        <div className="pane-actions">
+          {project && (
             <button className="mini-btn" onClick={() => api.reveal(project.path)}>
               Reveal
             </button>
-          </div>
-        </header>
-      ) : (
+          )}
+        </div>
+      </header>
+
+      {!project && (
         <div className="pane-empty">
           <div className="pane-empty-glyph">◐</div>
           <p>Pick a project on the left to open it here with Claude Code.</p>

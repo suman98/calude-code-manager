@@ -6,9 +6,31 @@ import { VscodeView } from "./components/VscodeView";
 import { ImportDialog } from "./components/ImportDialog";
 import { ChatsPanel } from "./components/ChatsPanel";
 import { UsageDialog } from "./components/UsageDialog";
+import { Resizer } from "./components/Resizer";
 import "./App.css";
 
 const INITIAL_STATUS: ServerStatus = { phase: "starting", message: "Starting…", port: null };
+
+const PROJECTS_MIN = 210;
+const CHATS_MIN = 220;
+const PANE_MIN = 380;
+
+function stored<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : (JSON.parse(raw) as T);
+  } catch {
+    return fallback;
+  }
+}
+
+function remember(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* private window, non-fatal */
+  }
+}
 
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -21,6 +43,17 @@ export default function App() {
   const [showUsage, setShowUsage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+
+  const [showProjects, setShowProjects] = useState(() => stored("es.showProjects", true));
+  const [showChats, setShowChats] = useState(() => stored("es.showChats", true));
+  const [projectsWidth, setProjectsWidth] = useState(() => stored("es.projectsWidth", 290));
+  const [chatsWidth, setChatsWidth] = useState(() => stored("es.chatsWidth", 268));
+  const [resizing, setResizing] = useState(false);
+
+  useEffect(() => remember("es.showProjects", showProjects), [showProjects]);
+  useEffect(() => remember("es.showChats", showChats), [showChats]);
+  useEffect(() => remember("es.projectsWidth", projectsWidth), [projectsWidth]);
+  useEffect(() => remember("es.chatsWidth", chatsWidth), [chatsWidth]);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -138,8 +171,21 @@ export default function App() {
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        searchRef.current?.focus();
-        searchRef.current?.select();
+        if (!showProjects) setShowProjects(true);
+        setTimeout(() => {
+          searchRef.current?.focus();
+          searchRef.current?.select();
+        }, 0);
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "1") {
+        e.preventDefault();
+        setShowProjects((v) => !v);
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "2") {
+        e.preventDefault();
+        setShowChats((v) => !v);
         return;
       }
 
@@ -168,37 +214,72 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showImport, showUsage, flat, selectedIndex, query, selectProject, toggleFavorite, removeProject]);
+  }, [showImport, showUsage, showProjects, flat, selectedIndex, query, selectProject, toggleFavorite, removeProject]);
+
+  const chatsVisible = showChats && !!activeProject;
+  const maxProjects = Math.max(PROJECTS_MIN, window.innerWidth - PANE_MIN - (chatsVisible ? chatsWidth : 0));
+  const maxChats = Math.max(CHATS_MIN, window.innerWidth - PANE_MIN - (showProjects ? projectsWidth : 0));
+
+  // Whichever pane sits leftmost has to clear the macOS traffic lights.
+  const firstPane = showProjects ? "projects" : chatsVisible ? "chats" : "main";
 
   return (
     <div className="app">
-      <Sidebar
-        projects={projects}
-        activeId={activeId}
-        openIds={new Set(openIds)}
-        query={query}
-        selectedIndex={selectedIndex}
-        onQuery={(q) => {
-          setQuery(q);
-          setSelectedIndex(0);
-        }}
-        onSelect={selectProject}
-        onToggleFavorite={toggleFavorite}
-        onRemove={removeProject}
-        onAdd={addFolder}
-        onImport={() => setShowImport(true)}
-        onShowUsage={() => setShowUsage(true)}
-        searchRef={searchRef}
-        rowRefs={rowRefs}
-      />
+      {showProjects && (
+        <>
+          <Sidebar
+            width={projectsWidth}
+            firstPane={firstPane === "projects"}
+            projects={projects}
+            activeId={activeId}
+            openIds={new Set(openIds)}
+            query={query}
+            selectedIndex={selectedIndex}
+            onQuery={(q) => {
+              setQuery(q);
+              setSelectedIndex(0);
+            }}
+            onSelect={selectProject}
+            onToggleFavorite={toggleFavorite}
+            onRemove={removeProject}
+            onAdd={addFolder}
+            onImport={() => setShowImport(true)}
+            onShowUsage={() => setShowUsage(true)}
+            searchRef={searchRef}
+            rowRefs={rowRefs}
+          />
+          <Resizer
+            label="Resize projects"
+            width={projectsWidth}
+            min={PROJECTS_MIN}
+            max={maxProjects}
+            onResize={setProjectsWidth}
+            onDragStart={() => setResizing(true)}
+            onDragEnd={() => setResizing(false)}
+          />
+        </>
+      )}
 
-      {activeProject && (
-        <ChatsPanel
-          key={activeProject.path}
-          project={activeProject}
-          serverReady={status.phase === "ready"}
-          onShowUsage={() => setShowUsage(true)}
-        />
+      {chatsVisible && activeProject && (
+        <>
+          <ChatsPanel
+            key={activeProject.path}
+            width={chatsWidth}
+            firstPane={firstPane === "chats"}
+            project={activeProject}
+            serverReady={status.phase === "ready"}
+            onShowUsage={() => setShowUsage(true)}
+          />
+          <Resizer
+            label="Resize chats"
+            width={chatsWidth}
+            min={CHATS_MIN}
+            max={maxChats}
+            onResize={setChatsWidth}
+            onDragStart={() => setResizing(true)}
+            onDragEnd={() => setResizing(false)}
+          />
+        </>
       )}
 
       <main className="main">
@@ -209,7 +290,12 @@ export default function App() {
           <VscodeView
             project={activeProject}
             status={status}
-            dialogOpen={showImport || showUsage}
+            suppressed={showImport || showUsage || resizing}
+            firstPane={firstPane === "main"}
+            showProjects={showProjects}
+            showChats={showChats}
+            onToggleProjects={() => setShowProjects((v) => !v)}
+            onToggleChats={() => setShowChats((v) => !v)}
             onRetry={retryServer}
           />
         )}

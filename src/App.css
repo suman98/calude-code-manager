@@ -64,17 +64,27 @@ kbd {
 
 /* ── sidebar ─────────────────────────────────────────── */
 .sidebar {
-  width: 290px;
   flex-shrink: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg);
   border-right: 1px solid var(--border-soft);
 }
 
-.sidebar-head {
-  padding: 22px 12px 9px 80px;
+/* Shared top strip for every pane, so their headers line up. */
+.pane-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  flex-shrink: 0;
+  padding: 0 12px;
   -webkit-app-region: drag;
+}
+
+.pane-top.with-traffic {
+  padding-left: 78px;
 }
 
 .brand {
@@ -312,8 +322,23 @@ kbd {
   border-top: 1px solid var(--border-soft);
 }
 
-.meters:hover {
-  background: color-mix(in srgb, var(--bg-row-hover) 55%, transparent);
+.meters-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.meters-link {
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--accent);
+  padding: 2px 4px;
+  border-radius: 5px;
+}
+
+.meters-link:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .meters-title {
@@ -387,6 +412,10 @@ kbd {
 
 .primary-btn,
 .ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border-radius: 7px;
   padding: 7px 12px;
   font-weight: 550;
@@ -420,8 +449,8 @@ kbd {
 
 /* ── chats column ────────────────────────────────────── */
 .chats {
-  width: 262px;
   flex-shrink: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -430,11 +459,7 @@ kbd {
 }
 
 .chats-head {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  padding: 22px 12px 8px;
-  -webkit-app-region: drag;
 }
 
 .chats-head h2 {
@@ -447,9 +472,12 @@ kbd {
 
 .new-chat {
   -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 3px 9px;
+  border-radius: 7px;
+  padding: 4px 10px;
   font-size: 11.5px;
   font-weight: 550;
   color: var(--text-dim);
@@ -467,7 +495,20 @@ kbd {
 }
 
 .chats-filter {
-  margin: 0 12px 6px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 0 12px 8px;
+}
+
+.chats-filter .search {
+  font-size: 12.5px;
+  padding: 6px 12px 6px 30px;
+}
+
+.chats-filter .search-icon {
+  left: 22px;
 }
 
 .chats-list {
@@ -699,6 +740,70 @@ kbd {
   position: relative;
 }
 
+/* ── split handles ───────────────────────────────────── */
+.resizer {
+  position: relative;
+  flex: 0 0 5px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 5;
+}
+
+.resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0 2px;
+  background: var(--border-soft);
+  transition: background 0.12s;
+}
+
+.resizer:hover::after,
+body.resizing .resizer::after {
+  background: var(--accent);
+}
+
+.resizer-grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 26px;
+  border-radius: 2px;
+  transform: translate(-50%, -50%);
+  background: transparent;
+}
+
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* ── pane toggles ────────────────────────────────────── */
+.pane-toggles {
+  display: flex;
+  gap: 3px;
+  -webkit-app-region: no-drag;
+}
+
+.toggle-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--text-faint);
+}
+
+.toggle-btn:hover {
+  background: var(--bg-row-hover);
+  color: var(--text);
+}
+
+.toggle-btn.on {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
 /* ── main pane ───────────────────────────────────────── */
 .main {
   flex: 1;
@@ -736,13 +841,8 @@ kbd {
 }
 
 .pane-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 40px;
-  padding: 0 12px;
+  justify-content: flex-start;
   border-bottom: 1px solid var(--border-soft);
-  -webkit-app-region: drag;
 }
 
 .pane-title {
@@ -767,6 +867,7 @@ kbd {
 .pane-actions {
   display: flex;
   gap: 6px;
+  margin-left: auto;
   -webkit-app-region: no-drag;
 }
 

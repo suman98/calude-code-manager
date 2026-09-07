@@ -2,8 +2,11 @@ import { useMemo } from "react";
 import { type Project } from "../lib/api";
 import { fuzzyScore, parentPath, relativeTime } from "../lib/format";
 import { UsageMeters } from "./UsageMeters";
+import { SearchIcon, FolderIcon } from "./icons";
 
 interface Props {
+  width: number;
+  firstPane: boolean;
   projects: Project[];
   activeId: string | null;
   openIds: Set<string>;
@@ -52,6 +55,8 @@ export function flatList(projects: Project[], query: string): Project[] {
 }
 
 export function Sidebar({
+  width,
+  firstPane,
   projects,
   activeId,
   openIds,
@@ -71,20 +76,15 @@ export function Sidebar({
   let rowIndex = -1;
 
   return (
-    <aside className="sidebar">
-      <div className="sidebar-head" data-tauri-drag-region>
+    <aside className="sidebar" style={{ width }}>
+      <div className={"pane-top" + (firstPane ? " with-traffic" : "")} data-tauri-drag-region>
         <span className="brand">
           <span className="glyph">⇄</span> Easy Switch
         </span>
       </div>
 
       <div className="searchwrap">
-        <svg className="search-icon" viewBox="0 0 16 16" aria-hidden="true">
-          <path
-            fill="currentColor"
-            d="M11.7 10.3a5.5 5.5 0 1 0-1.4 1.4l3 3a1 1 0 0 0 1.4-1.4zM3 6.5a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0"
-          />
-        </svg>
+        <SearchIcon className="search-icon" />
         <input
           ref={searchRef}
           className="search"
@@ -182,7 +182,7 @@ export function Sidebar({
           Import
         </button>
         <button className="primary-btn" onClick={onAdd}>
-          Add folder
+          <FolderIcon /> Add folder
         </button>
       </div>
     </aside>

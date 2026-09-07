@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type Project, type SessionSummary, type Totals } from "../lib/api";
 import { formatTokens, relativeTime, shortModel } from "../lib/format";
+import { PlusIcon, SearchIcon } from "./icons";
 
 interface Props {
+  width: number;
+  firstPane: boolean;
   project: Project;
   serverReady: boolean;
   onShowUsage: () => void;
 }
 
-export function ChatsPanel({ project, serverReady, onShowUsage }: Props) {
+export function ChatsPanel({ width, firstPane, project, serverReady, onShowUsage }: Props) {
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -95,21 +98,27 @@ export function ChatsPanel({ project, serverReady, onShowUsage }: Props) {
     : 0;
 
   return (
-    <section className="chats">
-      <header className="chats-head">
+    <section className="chats" style={{ width }}>
+      <header
+        className={"pane-top chats-head" + (firstPane ? " with-traffic" : "")}
+        data-tauri-drag-region
+      >
         <h2>Chats</h2>
         <button className="new-chat" onClick={newChat} disabled={!serverReady || busy}>
-          + New
+          <PlusIcon /> New
         </button>
       </header>
 
       {(sessions?.length ?? 0) > 6 && (
-        <input
-          className="input sm chats-filter"
-          placeholder="Filter chats…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        <div className="chats-filter">
+          <SearchIcon className="search-icon" />
+          <input
+            className="search"
+            placeholder="Filter chats…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
       )}
 
       <div className="chats-list">

@@ -52,43 +52,63 @@ export function UsageMeters({ onOpenDetails }: Props) {
   }, [limits, refresh]);
 
   if (!data) return null;
+  const missingLimit = !data.session.limit || !data.weekly.limit;
 
   return (
-    <button className="meters" onClick={onOpenDetails} title="Open the full usage report">
-      <span className="meters-title">Usage</span>
+    <section className="meters">
+      <header className="meters-head">
+        <span className="meters-title">Usage</span>
+        <button className="meters-link" onClick={onOpenDetails}>
+          {missingLimit ? "Set limits" : "Details"}
+        </button>
+      </header>
+
+      {/* The 5-hour block has a real anchor, so its countdown is meaningful.
+          The weekly figure is a trailing 7 days — there is no reset instant to
+          show without knowing the plan's cycle. */}
       <Meter label="Session (5hr)" w={data.session} now={data.now} />
-      <Meter label="Weekly (7 day)" w={data.weekly} now={data.now} />
-    </button>
+      <Meter label="Weekly (7 day)" w={data.weekly} now={data.now} rolling />
+    </section>
   );
 }
 
-function Meter({ label, w, now }: { label: string; w: WindowUsage; now: number }) {
+function Meter({
+  label,
+  w,
+  now,
+  rolling = false,
+}: {
+  label: string;
+  w: WindowUsage;
+  now: number;
+  rolling?: boolean;
+}) {
   const pct = w.limit ? Math.min(100, Math.round((w.tokens / w.limit) * 100)) : null;
-  // With no configured limit the bar still needs a length: scale it by how far
-  // through the window we are, so it reads as progress rather than a fake quota.
-  const elapsed =
-    w.window_start && w.resets_at
-      ? Math.min(100, Math.max(0, ((now - w.window_start) / (w.resets_at - w.window_start)) * 100))
-      : 0;
-  const width = pct ?? elapsed;
   const until = untilLabel(w.resets_at, now);
 
+  let sub: string;
+  if (w.messages === 0) sub = "No activity yet";
+  else if (rolling) sub = `Trailing 7 days · ${formatTokens(w.tokens)} tokens`;
+  else if (until) sub = `Resets in ${until}`;
+  else sub = `${formatTokens(w.tokens)} tokens`;
+
   return (
-    <span className="meter">
-      <span className="meter-top">
+    <div className="meter">
+      <div className="meter-top">
         <span className="meter-label">{label}</span>
-        <span className="meter-value">{pct !== null ? `${pct}%` : formatTokens(w.tokens)}</span>
-      </span>
-      <span className="meter-track">
-        <span
-          className={"meter-fill" + (pct !== null && pct >= 90 ? " hot" : "")}
-          style={{ width: `${width}%` }}
-        />
-      </span>
-      <span className="meter-sub">
-        {until ? `Resets in ${until}` : "No activity in this window"}
-        {pct === null && w.messages > 0 ? " · set a limit for %" : ""}
-      </span>
-    </span>
+        <span className="meter-value">
+          {pct !== null ? `${pct}%` : formatTokens(w.tokens)}
+        </span>
+      </div>
+      <div className="meter-track">
+        {pct !== null && (
+          <span
+            className={"meter-fill" + (pct >= 90 ? " hot" : "")}
+            style={{ width: `${pct}%` }}
+          />
+        )}
+      </div>
+      <div className="meter-sub">{sub}</div>
+    </div>
   );
 }

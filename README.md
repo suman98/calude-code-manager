@@ -49,15 +49,17 @@ transcript rather than trying to reverse it.
   reopens that exact session; **+ New** starts a fresh one. Both work by asking
   the helper extension to run `claude-vscode.primaryEditor.open`, optionally with
   a session id.
-- **Usage meters** — rolling 5-hour and 7-day windows, anchored on the first turn
-  inside each window, with real reset countdowns.
+- **Usage meters** — a rolling 5-hour block (anchored on its first turn, so its
+  reset countdown is real) and a trailing 7-day total.
 
 **A caveat on percentages.** The 5hr/weekly percentages Claude Code shows in
 `/usage` come from Anthropic's API and are *not* stored on disk — transcripts
 record `rateLimits: null`, and `quotaLimits` appears only on 429 rejections. So
 these meters measure your own token consumption in those windows. Enter your
 plan's token allowance under **Usage → Window limits** to turn them into
-percentages; until then they show token counts and window progress.
+percentages; until then they show token counts. The weekly figure is labelled a
+trailing window rather than given an invented reset instant, since the plan's
+cycle is unknown.
 
 Tokens counted for a window are input + output + cache writes; cache reads are
 tracked separately because they dwarf everything else.
@@ -68,9 +70,17 @@ tracked separately because they dwarf everything else.
   first; star the ones you live in. Reopens your last project on launch.
 - **Import from VS Code** — one click pulls in folders VS Code already remembers
   (`storage.json`), filtered to ones that still exist.
+- **Three-pane split** — projects, chats and Claude Code. Drag the handles between
+  panes to resize (double-click a handle to snap it back to its minimum); widths
+  and collapsed state persist. Collapse either side pane with the two buttons in
+  the header or `⌘1` / `⌘2`.
 - **Global hotkey** — `⌘⇧O` (Ctrl+Shift+O) summons the window from anywhere.
 - **Keyboard** — `↑`/`↓` move, `↵` open, `⌘D` favorite, `⌘⌫` remove, `⌘K` or `/`
-  focus search.
+  focus search, `⌘1` projects pane, `⌘2` chats pane.
+
+Dragging a split handle hides the embedded VS Code for the duration: it is a
+native webview layered over the page, so it would otherwise swallow the pointer
+as soon as the cursor crossed into it.
 
 Tracked projects live in `projects.json` in the app config dir. Removing a
 project never touches the folder.
