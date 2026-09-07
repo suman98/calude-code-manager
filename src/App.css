@@ -489,10 +489,9 @@ body.dnd-active .row:hover:not(.dragging) {
   border-color: var(--text);
 }
 
-/* Native colour panel behind a swatch-sized target. */
+/* Rainbow wheel until a custom colour is picked, then that colour fills it. */
 .pm-swatch.pm-custom {
   position: relative;
-  overflow: hidden;
   cursor: pointer;
   background: conic-gradient(
     from 0deg,
@@ -508,15 +507,8 @@ body.dnd-active .row:hover:not(.dragging) {
   );
 }
 
-.pm-swatch.pm-custom input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  border: none;
-  opacity: 0;
-  cursor: pointer;
+.pm-swatch.pm-custom.open {
+  border-color: var(--text);
 }
 
 .pm-swatch.pm-none {
@@ -525,6 +517,73 @@ body.dnd-active .row:hover:not(.dragging) {
   font-size: 11px;
   color: var(--text-faint);
   background: var(--bg);
+}
+
+/* ── colour picker: saturation/value square + hue strip ─────────────── */
+/* Self-contained, no dependency on `<input type="color">` — that relies on
+   the WebView's own colour panel, which does not reliably open inside a
+   Tauri child window. */
+.cpicker {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 6px 2px 2px;
+}
+
+.cpicker-sv {
+  position: relative;
+  width: 100%;
+  height: 96px;
+  border-radius: 7px;
+  outline: 1px solid var(--swatch-ring);
+  outline-offset: -1px;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.cpicker-sv-thumb {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.cpicker-hue {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  border-radius: 6px;
+  outline: 1px solid var(--swatch-ring);
+  outline-offset: -1px;
+  cursor: pointer;
+  touch-action: none;
+  background: linear-gradient(
+    to right,
+    hsl(0 100% 50%),
+    hsl(60 100% 50%),
+    hsl(120 100% 50%),
+    hsl(180 100% 50%),
+    hsl(240 100% 50%),
+    hsl(300 100% 50%),
+    hsl(360 100% 50%)
+  );
+}
+
+.cpicker-hue-thumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
+  background: transparent;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 
 .pm-sep {

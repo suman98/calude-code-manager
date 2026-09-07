@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type Project } from "../lib/api";
+import { ColorPicker } from "./ColorPicker";
 
 export const PROJECT_COLORS = [
   "#6e8bff",
@@ -38,14 +39,15 @@ export function ProjectMenu({
 }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number }>({ top: -9999, left: -9999 });
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  // Anything not in the preset row came from the native colour panel.
+  // Anything not in the preset row came from the custom picker.
   const preset = PROJECT_COLORS.includes(project.color as (typeof PROJECT_COLORS)[number]);
   const custom = project.color && !preset ? project.color : null;
 
-  // The panel streams a colour as you drag inside it. Persist at a lazy rate so
-  // the app tints live without a write per frame; the final value always lands
-  // on the input's change event.
+  // The picker streams a colour as you drag inside it. Persist at a lazy rate
+  // so the app tints live without a write per frame; the final value always
+  // lands on release, via onCommit.
   const lastLive = useRef(0);
   const onLive = useCallback(
     (value: string) => {
@@ -57,6 +59,8 @@ export function ProjectMenu({
     [onColor],
   );
 
+  // The picker changes the popover's height, so its position has to be
+  // recomputed whenever it opens or closes, not just when the anchor moves.
   useLayoutEffect(() => {
     const a = anchor.getBoundingClientRect();
     const m = ref.current?.getBoundingClientRect();
@@ -68,7 +72,7 @@ export function ProjectMenu({
     if (left + w > window.innerWidth - 8) left = window.innerWidth - 8 - w;
     if (top + h > window.innerHeight - 8) top = a.top - h - 6;
     setPos({ top, left });
-  }, [anchor]);
+  }, [anchor, pickerOpen]);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -104,19 +108,14 @@ export function ProjectMenu({
             aria-label={`Colour ${c}`}
           />
         ))}
-        <label
-          className={"pm-swatch pm-custom" + (custom ? " on" : "")}
+        <button
+          className={"pm-swatch pm-custom" + (custom ? " on" : "") + (pickerOpen ? " open" : "")}
           style={custom ? { background: custom } : undefined}
+          onClick={() => setPickerOpen((v) => !v)}
           title="Custom colour…"
-        >
-          <input
-            type="color"
-            value={project.color ?? "#6e8bff"}
-            onInput={(e) => onLive(e.currentTarget.value)}
-            onChange={(e) => onColor(e.currentTarget.value)}
-            aria-label="Custom colour"
-          />
-        </label>
+          aria-label="Custom colour"
+          aria-expanded={pickerOpen}
+        />
         <button
           className={"pm-swatch pm-none" + (!project.color ? " on" : "")}
           onClick={() => onColor(null)}
@@ -126,6 +125,10 @@ export function ProjectMenu({
           ⊘
         </button>
       </div>
+
+      {pickerOpen && (
+        <ColorPicker hex={custom ?? project.color ?? "#6e8bff"} onLive={onLive} onCommit={onColor} />
+      )}
 
       <div className="pm-sep" />
       <button className="pm-item" onClick={onUploadIcon}>
