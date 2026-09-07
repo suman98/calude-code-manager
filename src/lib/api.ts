@@ -180,6 +180,10 @@ export const api = {
   setVscodeTheme: (theme: "dark" | "light") => invoke<string>("set_vscode_theme", { theme }),
   openSession: (sessionId: string) =>
     invoke<void>("send_vscode_command", { command: "openSession", sessionId }),
+  // Toggles VS Code's own Explorer/primary side bar — distinct from this
+  // app's own project list, which is a plain local UI state, not VS Code state.
+  toggleVscodeSidebar: () =>
+    invoke<void>("send_vscode_command", { command: "toggleSidebar", sessionId: null }),
 };
 
 export interface Rect {

@@ -518,7 +518,7 @@ const HELPER_PACKAGE_JSON: &str = r#"{
   "displayName": "Claude Manager Layout",
   "description": "Opens Claude Code as the only surface in the window.",
   "publisher": "easyswitch",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "engines": { "vscode": "^1.94.0" },
   "main": "./extension.js",
   "activationEvents": ["onStartupFinished"],
@@ -794,6 +794,9 @@ async function handleCommand(msg) {
     await applyMode(msg.mode === "code" ? "code" : "claude");
   } else if (msg.command === "setTheme") {
     await applyTheme(msg.theme === "light" ? "light" : "dark");
+  } else if (msg.command === "toggleSidebar") {
+    // VS Code's own Explorer/primary side bar — not this app's project list.
+    await run("workbench.action.toggleSidebarVisibility");
   }
 }
 
@@ -986,8 +989,8 @@ const COMMAND_FILE: &str = "easy-switch-cmd.json";
 const MODE_FILE: &str = "easy-switch-mode.json";
 const THEME_FILE: &str = "easy-switch-theme.json";
 const HELPER_ID: &str = "easyswitch.easy-switch-layout";
-const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.13";
-const HELPER_VERSION: &str = "1.0.13";
+const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.14";
+const HELPER_VERSION: &str = "1.0.14";
 
 /// Drop in a tiny workspace extension that hides the IDE chrome and opens
 /// Claude Code in the editor area on every window.

@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  api,
-  type AccountState,
-  type Project,
-  type ServerStatus,
-  type VscodeMode,
-} from "../lib/api";
+import { api, type AccountState, type Project, type ServerStatus } from "../lib/api";
 import { parentPath } from "../lib/format";
-import { PanelLeftIcon, HistoryIcon, SunIcon, MoonIcon } from "./icons";
+import { PanelLeftIcon, HistoryIcon, VscodeSidebarIcon, SunIcon, MoonIcon } from "./icons";
 import { AccountMenu } from "./AccountMenu";
 
 interface Props {
@@ -18,10 +12,12 @@ interface Props {
   firstPane: boolean;
   showProjects: boolean;
   showChats: boolean;
-  mode: VscodeMode;
-  onMode: (mode: VscodeMode) => void;
+  /** best-effort — a locally-tracked guess, since VS Code doesn't report its
+      own sidebar's open state back to us */
+  vscodeSidebarOpen: boolean;
   onToggleProjects: () => void;
   onToggleChats: () => void;
+  onToggleVscodeSidebar: () => void;
   onRetry: () => void;
   accounts: AccountState;
   onAccounts: (s: AccountState, restart: boolean) => void;
@@ -37,10 +33,10 @@ export function VscodeView({
   firstPane,
   showProjects,
   showChats,
-  mode,
-  onMode,
+  vscodeSidebarOpen,
   onToggleProjects,
   onToggleChats,
+  onToggleVscodeSidebar,
   onRetry,
   accounts,
   onAccounts,
@@ -166,24 +162,14 @@ export function VscodeView({
 
         <div className="pane-actions">
           {project && (
-            <div className="mode-switch" role="group" aria-label="Editor mode">
-              <button
-                className={mode === "claude" ? "on" : ""}
-                onClick={() => onMode("claude")}
-                aria-pressed={mode === "claude"}
-                title="Claude Code only (⌘E)"
-              >
-                Claude
-              </button>
-              <button
-                className={mode === "code" ? "on" : ""}
-                onClick={() => onMode("code")}
-                aria-pressed={mode === "code"}
-                title="Source code — explorer, tabs, status bar (⌘E)"
-              >
-                Code
-              </button>
-            </div>
+            <button
+              className={"toggle-btn" + (vscodeSidebarOpen ? " on" : "")}
+              onClick={onToggleVscodeSidebar}
+              title="Toggle VS Code's sidebar"
+              aria-pressed={vscodeSidebarOpen}
+            >
+              <VscodeSidebarIcon />
+            </button>
           )}
           <button
             className="mini-btn icon-only"

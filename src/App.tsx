@@ -7,7 +7,6 @@ import {
   type AccountState,
   type Project,
   type ServerStatus,
-  type VscodeMode,
 } from "./lib/api";
 import { Sidebar, flatList } from "./components/Sidebar";
 import { VscodeView } from "./components/VscodeView";
@@ -63,7 +62,9 @@ export default function App() {
   const [projectsWidth, setProjectsWidth] = useState(() => stored("es.projectsWidth", 290));
   const [chatsWidth, setChatsWidth] = useState(() => stored("es.chatsWidth", 268));
   const [resizing, setResizing] = useState(false);
-  const [mode, setMode] = useState<VscodeMode>("claude");
+  // Local best-effort tracking only — VS Code owns this state, not us. Code
+  // mode starts it collapsed (see vscode.rs), so this starts false to match.
+  const [vscodeSidebarOpen, setVscodeSidebarOpen] = useState(false);
 
   useEffect(() => remember("es.showProjects", showProjects), [showProjects]);
   useEffect(() => remember("es.showChats", showChats), [showChats]);
@@ -214,14 +215,9 @@ export default function App() {
     }
   }, [flash, selectProject]);
 
-  // The mode lives in the VS Code data dir so new windows come up matching.
-  useEffect(() => {
-    api.getMode().then(setMode).catch(() => {});
-  }, []);
-
-  const changeMode = useCallback((next: VscodeMode) => {
-    setMode(next);
-    api.setMode(next).catch(() => {});
+  const toggleVscodeSidebar = useCallback(() => {
+    setVscodeSidebarOpen((v) => !v);
+    api.toggleVscodeSidebar().catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -286,12 +282,6 @@ export default function App() {
         setShowChats((v) => !v);
         return;
       }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "e") {
-        e.preventDefault();
-        changeMode(mode === "claude" ? "code" : "claude");
-        return;
-      }
-
       const inSearch = document.activeElement === searchRef.current;
 
       if (e.key === "ArrowDown") {
@@ -317,7 +307,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showImport, showUsage, showProjects, mode, changeMode, flat, selectedIndex, query, selectProject, toggleFavorite, removeProject]);
+  }, [showImport, showUsage, showProjects, flat, selectedIndex, query, selectProject, toggleFavorite, removeProject]);
 
   const chatsVisible = showChats && !!activeProject;
   const maxProjects = Math.max(PROJECTS_MIN, window.innerWidth - PANE_MIN - (chatsVisible ? chatsWidth : 0));
@@ -406,10 +396,10 @@ export default function App() {
             firstPane={firstPane === "main"}
             showProjects={showProjects}
             showChats={showChats}
-            mode={mode}
-            onMode={changeMode}
+            vscodeSidebarOpen={vscodeSidebarOpen}
             onToggleProjects={() => setShowProjects((v) => !v)}
             onToggleChats={() => setShowChats((v) => !v)}
+            onToggleVscodeSidebar={toggleVscodeSidebar}
             onRetry={retryServer}
             accounts={accounts}
             onAccounts={applyAccounts}
