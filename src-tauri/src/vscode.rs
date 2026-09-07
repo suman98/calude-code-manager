@@ -518,7 +518,7 @@ const HELPER_PACKAGE_JSON: &str = r#"{
   "displayName": "Easy Switch Layout",
   "description": "Opens Claude Code as the only surface in the window.",
   "publisher": "easyswitch",
-  "version": "1.0.10",
+  "version": "1.0.13",
   "engines": { "vscode": "^1.94.0" },
   "main": "./extension.js",
   "activationEvents": ["onStartupFinished"],
@@ -715,15 +715,16 @@ async function applyMode(mode) {
   const changed = await applySettings(mode === "code" ? CODE_LAYOUT : CLAUDE_LAYOUT);
   log(`applyMode ${mode} changed=${changed}`);
   if (mode === "code") {
-    // Bring the file tree back; keep the secondary bar (Copilot chat) out of it.
+    // Standard chrome (activity bar, tabs) stays — only the Explorer panel
+    // starts collapsed, so the Claude tab does not compete for width with the
+    // file tree. Code mode still opens on Claude Code initially, as a normal
+    // tab beside whatever else is open, not the exclusive surface Claude mode is.
     await run("workbench.action.closeAuxiliaryBar");
     await run("workbench.action.closePanel");
-    await run("workbench.view.explorer");
-    // Code mode still opens on Claude Code — as a tab beside the explorer,
-    // alongside whatever else is already open rather than replacing it.
+    await run("workbench.action.closeSidebar");
     const opened = await openClaude(false);
     log(`code mode claude tab=${opened}`);
-    await run("workbench.view.explorer");
+    await run("workbench.action.closeSidebar");
   } else {
     await collapseChrome();
     await openClaude();
@@ -985,8 +986,8 @@ const COMMAND_FILE: &str = "easy-switch-cmd.json";
 const MODE_FILE: &str = "easy-switch-mode.json";
 const THEME_FILE: &str = "easy-switch-theme.json";
 const HELPER_ID: &str = "easyswitch.easy-switch-layout";
-const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.10";
-const HELPER_VERSION: &str = "1.0.10";
+const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.13";
+const HELPER_VERSION: &str = "1.0.13";
 
 /// Drop in a tiny workspace extension that hides the IDE chrome and opens
 /// Claude Code in the editor area on every window.
