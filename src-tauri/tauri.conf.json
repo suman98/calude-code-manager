@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Easy Switch",
+        "title": "Calude Code Manager",
         "width": 1280,
         "height": 840,
         "minWidth": 900,

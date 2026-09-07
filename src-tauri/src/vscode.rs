@@ -255,6 +255,13 @@ pub fn ensure_server(app: AppHandle, vscode: State<Vscode>) {
                         return finish(false);
                     }
                 }
+                // Cosmetic, so a failure here must not block a working editor.
+                if !extension_installed(&data_dir, ICON_THEME_EXT) {
+                    vscode.set_status(&app, "starting", "Installing the icon theme…", None);
+                    if let Err(e) = install_extension(&data_dir, ICON_THEME_EXT) {
+                        eprintln!("[easy-switch] icon theme install failed: {e}");
+                    }
+                }
                 write_helper_extension(&data_dir);
                 vscode.set_status(&app, "ready", "Ready", Some(port));
                 return finish(true);
@@ -415,6 +422,36 @@ pub fn send_vscode_command(
     )
 }
 
+/// Keep the editor's colour theme in step with the app's. Written to disk as
+/// well as pushed, so a window opened later comes up already matching.
+#[tauri::command]
+pub fn set_vscode_theme(app: AppHandle, theme: String) -> Result<String, String> {
+    let theme = if theme == "light" { "light" } else { "dark" };
+    let data_dir = server_data_dir(&app);
+    // Persist first: a window that opens later reads this instead of flashing
+    // the wrong theme and waiting to be told.
+    std::fs::write(
+        data_dir.join(THEME_FILE),
+        serde_json::to_string(&serde_json::json!({ "theme": theme })).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    push_command(
+        &data_dir,
+        serde_json::json!({ "nonce": nonce(), "command": "setTheme", "theme": theme }),
+    )?;
+    Ok(theme.to_string())
+}
+
+#[tauri::command]
+pub fn get_vscode_theme(app: AppHandle) -> String {
+    std::fs::read_to_string(server_data_dir(&app).join(THEME_FILE))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("theme").and_then(|m| m.as_str()).map(str::to_string))
+        .filter(|t| t == "light")
+        .unwrap_or_else(|| "dark".to_string())
+}
+
 /// Switch the embedded VS Code between the Claude Code surface and a normal
 /// editor. The mode is written to disk as well as pushed, so windows opened
 /// later come up in the same mode.
@@ -468,7 +505,6 @@ const SETTINGS_JSON: &str = r#"{
   "workbench.startupEditor": "none",
   "workbench.layoutControl.enabled": false,
   "workbench.tips.enabled": false,
-  "workbench.colorTheme": "Default Dark Modern",
   "breadcrumbs.enabled": false,
   "telemetry.telemetryLevel": "off",
   "update.mode": "none",
@@ -482,7 +518,7 @@ const HELPER_PACKAGE_JSON: &str = r#"{
   "displayName": "Easy Switch Layout",
   "description": "Opens Claude Code as the only surface in the window.",
   "publisher": "easyswitch",
-  "version": "1.0.6",
+  "version": "1.0.8",
   "engines": { "vscode": "^1.94.0" },
   "main": "./extension.js",
   "activationEvents": ["onStartupFinished"],
@@ -495,7 +531,7 @@ const HELPER_PACKAGE_JSON: &str = r#"{
 }
 "#;
 
-const HELPER_EXTENSION_JS: &str = r#"const vscode = require("vscode");
+const HELPER_EXTENSION_JS: &str = r##"const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
 
@@ -503,6 +539,7 @@ const path = require("path");
 // two levels above this extension folder.
 const COMMAND_FILE = path.resolve(__dirname, "..", "..", "easy-switch-cmd.json");
 const MODE_FILE = path.resolve(__dirname, "..", "..", "easy-switch-mode.json");
+const THEME_FILE = path.resolve(__dirname, "..", "..", "easy-switch-theme.json");
 const LOG_FILE = path.resolve(__dirname, "..", "..", "easy-switch-helper.log");
 
 function log(msg) {
@@ -526,7 +563,7 @@ const BASE = {
   "workbench.startupEditor": "none",
   "workbench.layoutControl.enabled": false,
   "workbench.tips.enabled": false,
-  "workbench.colorTheme": "Default Dark Modern",
+  "workbench.iconTheme": "material-icon-theme",
   "chat.commandCenter.enabled": false,
   "telemetry.telemetryLevel": "off",
   "update.mode": "none",
@@ -565,6 +602,71 @@ async function run(cmd) {
   }
 }
 
+const THEMES = {
+  dark: "Default Dark Modern",
+  light: "Default Light Modern",
+};
+
+// A softer, blue-tinted take on Default Light Modern, scoped to that theme so
+// switching back to dark leaves the stock palette untouched.
+const LIGHT_CUSTOMIZATIONS = {
+  "[Default Light Modern]": {
+    "editor.background": "#EBF6FF",
+    "editor.foreground": "#102030",
+
+    "editorLineNumber.foreground": "#7F9AAF",
+    "editorCursor.foreground": "#000000",
+    "editor.selectionBackground": "#B9E0FF",
+    "editor.inactiveSelectionBackground": "#D7ECFC",
+    "editor.lineHighlightBackground": "#DFF1FF",
+    "editorWhitespace.foreground": "#B4CDDF",
+
+    "tab.activeBackground": "#FFFFFF",
+    "tab.activeForeground": "#102030",
+    "tab.inactiveBackground": "#D7ECFC",
+    "tab.inactiveForeground": "#5E7688",
+    "tab.border": "#C2D9EA",
+
+    "sideBar.background": "#E1F1FD",
+    "sideBar.foreground": "#102030",
+    "sideBarSectionHeader.background": "#D2E8F8",
+    "sideBarSectionHeader.foreground": "#102030",
+
+    "activityBar.background": "#D2E8F8",
+    "activityBar.foreground": "#0B1F33",
+    "activityBar.inactiveForeground": "#6D879A",
+    "activityBarBadge.background": "#007ACC",
+    "activityBarBadge.foreground": "#FFFFFF",
+
+    "titleBar.activeBackground": "#E1F1FD",
+    "titleBar.activeForeground": "#102030",
+    "titleBar.inactiveBackground": "#F3FAFF",
+    "titleBar.inactiveForeground": "#6D879A",
+
+    "statusBar.background": "#D2E8F8",
+    "statusBar.foreground": "#102030",
+    "statusBar.noFolderBackground": "#D2E8F8",
+    "statusBar.debuggingBackground": "#FFD966",
+    "statusBar.debuggingForeground": "#000000",
+
+    "panel.background": "#F5FBFF",
+    "panel.border": "#C2D9EA",
+
+    "terminal.background": "#EBF6FF",
+    "terminal.foreground": "#102030",
+    "terminalCursor.foreground": "#000000",
+  },
+};
+
+function readTheme() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(THEME_FILE, "utf8"));
+    return raw && raw.theme === "light" ? "light" : "dark";
+  } catch (_) {
+    return "dark";
+  }
+}
+
 function readMode() {
   try {
     const raw = JSON.parse(fs.readFileSync(MODE_FILE, "utf8"));
@@ -585,7 +687,8 @@ async function applySettings(map) {
     } catch (_) {
       current = undefined;
     }
-    if (current && current.globalValue === want) continue;
+    // Object values (colour customizations) never compare equal by identity.
+    if (current && JSON.stringify(current.globalValue) === JSON.stringify(want)) continue;
     try {
       await cfg.update(key, want, vscode.ConfigurationTarget.Global);
       changed = true;
@@ -596,6 +699,16 @@ async function applySettings(map) {
 
 async function applyLayoutSettings() {
   return applySettings(BASE);
+}
+
+async function applyTheme(theme) {
+  const light = theme === "light";
+  const want = THEMES[light ? "light" : "dark"];
+  const changed = await applySettings({
+    "workbench.colorTheme": want,
+    "workbench.colorCustomizations": light ? LIGHT_CUSTOMIZATIONS : {},
+  });
+  log(`applyTheme ${theme} -> ${want} changed=${changed}`);
 }
 
 async function applyMode(mode) {
@@ -671,6 +784,8 @@ async function handleCommand(msg) {
     await openSession(msg.sessionId);
   } else if (msg.command === "setMode") {
     await applyMode(msg.mode === "code" ? "code" : "claude");
+  } else if (msg.command === "setTheme") {
+    await applyTheme(msg.theme === "light" ? "light" : "dark");
   }
 }
 
@@ -710,13 +825,18 @@ async function activate(context) {
 
   watchCommands(context);
 
+  // Theme before layout, so a window never paints in the wrong palette while
+  // the Claude surface is still being assembled.
+  const theme = readTheme();
+  await applyTheme(theme);
+
   const mode = readMode();
-  log(`activate mode=${mode} trusted=${vscode.workspace.isTrusted}`);
+  log(`activate mode=${mode} theme=${theme} trusted=${vscode.workspace.isTrusted}`);
   await applyMode(mode);
 }
 
 module.exports = { activate, deactivate() {} };
-"#;
+"##;
 
 fn seed_settings(data_dir: &PathBuf) {
     let user_dir = data_dir.join("data").join("User");
@@ -744,29 +864,82 @@ fn downloaded_server_bin(data_dir: &PathBuf) -> Option<PathBuf> {
     None
 }
 
-fn claude_extension_installed(data_dir: &PathBuf) -> bool {
+/// Marketplace id of the icon theme the editor uses for files and folders.
+const ICON_THEME_EXT: &str = "pkief.material-icon-theme";
+
+fn extension_installed(data_dir: &PathBuf, id: &str) -> bool {
     let Ok(entries) = std::fs::read_dir(extensions_dir(data_dir)) else {
         return false;
     };
-    entries.flatten().any(|e| {
-        e.file_name()
-            .to_string_lossy()
-            .starts_with("anthropic.claude-code-")
-    })
+    let prefix = format!("{id}-");
+    entries
+        .flatten()
+        .any(|e| e.file_name().to_string_lossy().starts_with(&prefix))
 }
 
-fn install_claude_extension(data_dir: &PathBuf) -> Result<(), String> {
+fn claude_extension_installed(data_dir: &PathBuf) -> bool {
+    extension_installed(data_dir, "anthropic.claude-code")
+}
+
+fn read_manifest(data_dir: &PathBuf) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(extensions_dir(data_dir).join("extensions.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+fn entry_id(e: &serde_json::Value) -> Option<&str> {
+    e.pointer("/identifier/id").and_then(|v| v.as_str())
+}
+
+/// `--install-extension` rewrites `extensions.json` from its own scan, and it
+/// drops entries it cannot resolve — notably the platform-specific Claude Code
+/// build. Since the server deletes any folder the manifest omits, installing one
+/// extension could silently uninstall another. Put back whatever vanished while
+/// its folder is still on disk.
+fn restore_dropped_entries(data_dir: &PathBuf, before: &[serde_json::Value]) {
+    let mut after = read_manifest(data_dir);
+    if after.is_empty() {
+        return; // Unparseable or missing — not ours to rebuild.
+    }
+    let ext_root = extensions_dir(data_dir);
+    let mut restored = false;
+    for old in before {
+        let Some(id) = entry_id(old) else { continue };
+        if after.iter().any(|e| entry_id(e) == Some(id)) {
+            continue;
+        }
+        let folder_exists = old
+            .get("relativeLocation")
+            .and_then(|v| v.as_str())
+            .map(|rel| ext_root.join(rel).exists())
+            .unwrap_or(false);
+        if folder_exists {
+            after.push(old.clone());
+            restored = true;
+        }
+    }
+    if restored {
+        if let Ok(text) = serde_json::to_string(&after) {
+            let _ = std::fs::write(ext_root.join("extensions.json"), text);
+        }
+    }
+}
+
+fn install_extension(data_dir: &PathBuf, id: &str) -> Result<(), String> {
     let bin = downloaded_server_bin(data_dir)
         .ok_or_else(|| "VS Code server binary not found yet".to_string())?;
+    let before = read_manifest(data_dir);
     let out = Command::new(bin)
         .arg("--install-extension")
-        .arg("anthropic.claude-code")
+        .arg(id)
         .arg("--extensions-dir")
         .arg(extensions_dir(data_dir))
         .arg("--server-data-dir")
         .arg(data_dir)
         .output()
         .map_err(|e| e.to_string())?;
+    restore_dropped_entries(data_dir, &before);
     if out.status.success() {
         Ok(())
     } else {
@@ -774,11 +947,16 @@ fn install_claude_extension(data_dir: &PathBuf) -> Result<(), String> {
     }
 }
 
+fn install_claude_extension(data_dir: &PathBuf) -> Result<(), String> {
+    install_extension(data_dir, "anthropic.claude-code")
+}
+
 const COMMAND_FILE: &str = "easy-switch-cmd.json";
 const MODE_FILE: &str = "easy-switch-mode.json";
+const THEME_FILE: &str = "easy-switch-theme.json";
 const HELPER_ID: &str = "easyswitch.easy-switch-layout";
-const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.6";
-const HELPER_VERSION: &str = "1.0.6";
+const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.8";
+const HELPER_VERSION: &str = "1.0.8";
 
 /// Drop in a tiny workspace extension that hides the IDE chrome and opens
 /// Claude Code in the editor area on every window.
@@ -859,5 +1037,72 @@ fn write_helper_extension(data_dir: &PathBuf) {
         if std::fs::write(&tmp, text).is_ok() && std::fs::rename(&tmp, &manifest_path).is_err() {
             let _ = std::fs::remove_file(&tmp);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("easy-switch-test-{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(extensions_dir(&dir)).unwrap();
+        dir
+    }
+
+    fn entry(id: &str, rel: &str) -> serde_json::Value {
+        serde_json::json!({ "identifier": { "id": id }, "relativeLocation": rel })
+    }
+
+    fn ids(data_dir: &PathBuf) -> Vec<String> {
+        read_manifest(data_dir)
+            .iter()
+            .filter_map(|e| entry_id(e).map(str::to_string))
+            .collect()
+    }
+
+    #[test]
+    fn restores_an_entry_the_installer_dropped() {
+        let dir = scratch("restore");
+        let ext = extensions_dir(&dir);
+        std::fs::create_dir_all(ext.join("anthropic.claude-code-2.1.0-darwin-arm64")).unwrap();
+
+        let before = vec![entry("anthropic.claude-code", "anthropic.claude-code-2.1.0-darwin-arm64")];
+        // What the CLI left behind: the new extension only.
+        std::fs::write(
+            ext.join("extensions.json"),
+            serde_json::to_string(&vec![entry("pkief.material-icon-theme", "pkief.material-icon-theme-5.38.1")])
+                .unwrap(),
+        )
+        .unwrap();
+
+        restore_dropped_entries(&dir, &before);
+        let got = ids(&dir);
+        assert!(got.contains(&"anthropic.claude-code".to_string()), "got {got:?}");
+        assert!(got.contains(&"pkief.material-icon-theme".to_string()), "got {got:?}");
+    }
+
+    #[test]
+    fn does_not_resurrect_a_genuinely_removed_extension() {
+        let dir = scratch("removed");
+        let ext = extensions_dir(&dir);
+        // No folder on disk — the extension really is gone.
+        let before = vec![entry("some.ext", "some.ext-1.0.0")];
+        std::fs::write(ext.join("extensions.json"), serde_json::to_string(&vec![entry("kept.ext", "kept.ext-1.0.0")]).unwrap()).unwrap();
+
+        restore_dropped_entries(&dir, &before);
+        assert_eq!(ids(&dir), vec!["kept.ext".to_string()]);
+    }
+
+    #[test]
+    fn leaves_an_unreadable_manifest_alone() {
+        let dir = scratch("unreadable");
+        let ext = extensions_dir(&dir);
+        std::fs::create_dir_all(ext.join("a.b-1.0.0")).unwrap();
+        std::fs::write(ext.join("extensions.json"), "not json").unwrap();
+
+        restore_dropped_entries(&dir, &vec![entry("a.b", "a.b-1.0.0")]);
+        assert_eq!(std::fs::read_to_string(ext.join("extensions.json")).unwrap(), "not json");
     }
 }

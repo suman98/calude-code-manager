@@ -19,6 +19,8 @@ import "./App.css";
 
 const INITIAL_STATUS: ServerStatus = { phase: "starting", message: "Starting…", port: null };
 
+type Theme = "dark" | "light";
+
 const PROJECTS_MIN = 210;
 const CHATS_MIN = 220;
 const PANE_MIN = 380;
@@ -52,6 +54,7 @@ export default function App() {
   const [showImport, setShowImport] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
   const [accounts, setAccounts] = useState<AccountState>({ accounts: [], active: null });
+  const [theme, setTheme] = useState<Theme>(() => stored<Theme>("theme", "dark"));
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -224,6 +227,19 @@ export default function App() {
   useEffect(() => {
     api.accountState().then(setAccounts).catch(() => {});
   }, []);
+
+  // The palette hangs off <html>, so the whole document (dialogs and popovers
+  // portalled to <body> included) swaps at once.
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem("theme", JSON.stringify(theme));
+    } catch {
+      /* private mode — the choice just will not survive a restart */
+    }
+    // The embedded editor keeps its own settings, so it has to be told.
+    api.setVscodeTheme(theme).catch(() => {});
+  }, [theme]);
 
   // A token only reaches Claude Code through the server process's environment,
   // so switching accounts means restarting that server.
@@ -398,6 +414,8 @@ export default function App() {
             accounts={accounts}
             onAccounts={applyAccounts}
             onAccountError={flash}
+            theme={theme}
+            onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
           />
         )}
       </main>

@@ -7,7 +7,7 @@ import {
   type VscodeMode,
 } from "../lib/api";
 import { parentPath } from "../lib/format";
-import { PanelLeftIcon, HistoryIcon } from "./icons";
+import { PanelLeftIcon, HistoryIcon, SunIcon, MoonIcon } from "./icons";
 import { AccountMenu } from "./AccountMenu";
 
 interface Props {
@@ -26,6 +26,8 @@ interface Props {
   accounts: AccountState;
   onAccounts: (s: AccountState, restart: boolean) => void;
   onAccountError: (message: string) => void;
+  theme: "dark" | "light";
+  onToggleTheme: () => void;
 }
 
 export function VscodeView({
@@ -43,6 +45,8 @@ export function VscodeView({
   accounts,
   onAccounts,
   onAccountError,
+  theme,
+  onToggleTheme,
 }: Props) {
   const slotRef = useRef<HTMLDivElement | null>(null);
   const [mountErr, setMountErr] = useState<string | null>(null);
@@ -181,6 +185,15 @@ export function VscodeView({
               </button>
             </div>
           )}
+          <button
+            className="mini-btn icon-only"
+            onClick={onToggleTheme}
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+          </button>
+
           {/* Which Claude identity the embedded editor is running as. */}
           <button
             className={"acct-chip" + (activeAccount ? " custom" : "")}

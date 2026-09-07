@@ -692,6 +692,8 @@ pub fn run() {
             vscode::send_vscode_command,
             vscode::set_vscode_mode,
             vscode::get_vscode_mode,
+            vscode::set_vscode_theme,
+            vscode::get_vscode_theme,
             sessions::list_sessions,
             sessions::project_usage,
             sessions::usage_overview,

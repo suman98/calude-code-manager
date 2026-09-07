@@ -177,6 +177,7 @@ export const api = {
   newChat: () => invoke<void>("send_vscode_command", { command: "newChat", sessionId: null }),
   setMode: (mode: VscodeMode) => invoke<VscodeMode>("set_vscode_mode", { mode }),
   getMode: () => invoke<VscodeMode>("get_vscode_mode"),
+  setVscodeTheme: (theme: "dark" | "light") => invoke<string>("set_vscode_theme", { theme }),
   openSession: (sessionId: string) =>
     invoke<void>("send_vscode_command", { command: "openSession", sessionId }),
 };

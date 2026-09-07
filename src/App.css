@@ -1,3 +1,5 @@
+/* Dark is the default look; `data-theme="light"` on <html> swaps the palette.
+   Everything below this block should reference tokens, never raw colours. */
 :root {
   --bg: #0f1115;
   --bg-elev: #161922;
@@ -14,9 +16,45 @@
   --danger: #ff6b6b;
   --live: #5bd6a0;
   --meter: #f38ec4;
+  --track: #2a3040;
+  --swatch-ring: rgba(255, 255, 255, 0.08);
+  --notice-error-bg: #2a1d22;
+  --editor-bg: #1e1e1e;
+  --shadow: rgba(0, 0, 0, 0.6);
+  --shadow-soft: rgba(0, 0, 0, 0.45);
+  --scrim: color-mix(in srgb, #000 58%, transparent);
   --radius: 9px;
   --mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
   color-scheme: dark;
+}
+
+/* Light mirrors the editor's blue-tinted Default Light Modern, so the app
+   chrome and the embedded editor read as one surface. */
+:root[data-theme="light"] {
+  --bg: #E1F1FD;
+  --bg-elev: #F5FBFF;
+  --bg-row-hover: #D7ECFC;
+  --bg-active: #C7E4FA;
+  --border: #C2D9EA;
+  --border-soft: #D2E8F8;
+  --text: #102030;
+  --text-dim: #5E7688;
+  --text-faint: #6D879A;
+  --accent: #007ACC;
+  --accent-ink: #ffffff;
+  --gold: #9a6a05;
+  --danger: #c62d2d;
+  --live: #12855a;
+  --meter: #b34a83;
+  --track: #C2D9EA;
+  --swatch-ring: rgba(16, 32, 48, 0.14);
+  --notice-error-bg: #fbe7e7;
+  /* Matches editor.background, so the seam behind the editor disappears. */
+  --editor-bg: #EBF6FF;
+  --shadow: rgba(15, 20, 35, 0.18);
+  --shadow-soft: rgba(15, 20, 35, 0.14);
+  --scrim: color-mix(in srgb, #1b1f2a 35%, transparent);
+  color-scheme: light;
 }
 
 * {
@@ -213,8 +251,8 @@ kbd {
   cursor: grabbing;
   background: var(--bg-row-hover);
   box-shadow:
-    0 1px 2px rgb(0 0 0 / 0.18),
-    0 10px 24px rgb(0 0 0 / 0.26);
+    0 1px 2px var(--shadow-soft),
+    0 10px 24px var(--shadow);
   will-change: transform;
 }
 
@@ -407,7 +445,7 @@ body.dnd-active .row:hover:not(.dragging) {
   border-radius: 11px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  box-shadow: 0 16px 44px -12px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 16px 44px -12px var(--shadow);
   animation: pm-in 0.1s ease;
 }
 
@@ -439,7 +477,7 @@ body.dnd-active .row:hover:not(.dragging) {
   aspect-ratio: 1;
   border-radius: 6px;
   border: 2px solid transparent;
-  outline: 1px solid rgba(255, 255, 255, 0.08);
+  outline: 1px solid var(--swatch-ring);
   outline-offset: -1px;
 }
 
@@ -564,6 +602,26 @@ body.dnd-active .row:hover:not(.dragging) {
   color: var(--text-faint);
 }
 
+.meters-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px 2px 0;
+  border-radius: 5px;
+  color: var(--text-faint);
+}
+
+.meters-toggle:hover {
+  color: var(--text-dim);
+}
+
+/* Collapsed, the section is just its header — keep it from padding the
+   sidebar foot as if the meters were still there. */
+.meters:has(.meters-toggle[aria-expanded="false"]) {
+  gap: 0;
+  padding-bottom: 10px;
+}
+
 .meters-actions {
   display: flex;
   align-items: center;
@@ -660,14 +718,14 @@ body.dnd-active .row:hover:not(.dragging) {
 .meter-track {
   height: 7px;
   border-radius: 4px;
-  background: #2a3040;
+  background: var(--track);
   overflow: hidden;
 }
 
 .meter-track.unset {
   background: repeating-linear-gradient(
     90deg,
-    #2a3040 0 5px,
+    var(--track) 0 5px,
     transparent 5px 9px
   );
 }
@@ -1118,11 +1176,11 @@ body.resizing {
   border-radius: 8px;
   font-size: 12px;
   max-width: 80%;
-  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 24px -8px var(--shadow-soft);
 }
 
 .notice.error {
-  background: #2a1d22;
+  background: var(--notice-error-bg);
   border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
   color: color-mix(in srgb, var(--danger) 75%, var(--text));
 }
@@ -1218,6 +1276,13 @@ body.resizing {
   color: var(--text-dim);
 }
 
+.mini-btn.icon-only {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  padding: 4px 0;
+}
+
 .mini-btn:hover {
   background: var(--bg-row-hover);
   color: var(--text);
@@ -1269,7 +1334,7 @@ body.resizing {
   border-radius: 11px;
   border: 1px solid var(--border);
   background: var(--bg-elev);
-  box-shadow: 0 16px 40px rgb(0 0 0 / 0.45);
+  box-shadow: 0 16px 40px var(--shadow-soft);
 }
 
 .acct-line {
@@ -1373,7 +1438,7 @@ body.resizing {
 .vscode-slot {
   flex: 1;
   min-height: 0;
-  background: #1e1e1e;
+  background: var(--editor-bg);
 }
 
 .ext-hint {
@@ -1505,7 +1570,7 @@ body.resizing {
 .scrim {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, #000 58%, transparent);
+  background: var(--scrim);
   backdrop-filter: blur(2px);
   display: grid;
   place-items: center;
@@ -1522,7 +1587,7 @@ body.resizing {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 24px 60px -12px var(--shadow);
 }
 
 .dialog-head {

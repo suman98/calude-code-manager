@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { RefreshIcon } from "./icons";
+import { ChevronIcon, RefreshIcon } from "./icons";
 import {
   api,
   type AccountState,
@@ -22,6 +22,7 @@ const EMPTY_LIMITS: Limits = { session_tokens: null, weekly_tokens: null };
 // slowly, so poll rarely, tick the clock often, and let the reload button cover
 // the moments someone actually wants a fresh number.
 const LIVE_REFRESH_MS = 15 * 60_000;
+const OPEN_KEY = "usageOpen";
 const CLOCK_MS = 30_000;
 
 /** "2h", "4d", "18m" — the coarse countdown Claude Code shows. */
@@ -34,6 +35,14 @@ function untilLabel(resetsAt: number | null, now: number): string | null {
   const hours = ms / 3_600_000;
   if (hours < 24) return `${Math.round(hours)}h`;
   return `${Math.round(hours / 24)}d`;
+}
+
+function storedOpen(): boolean {
+  try {
+    return localStorage.getItem(OPEN_KEY) !== "false";
+  } catch {
+    return true;
+  }
 }
 
 /** "3m", "2h" — how long ago the numbers were fetched. */
@@ -57,6 +66,15 @@ export function UsageMeters({ onOpenDetails, accounts }: Props) {
   const [liveError, setLiveError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [reloading, setReloading] = useState(false);
+  const [open, setOpen] = useState(storedOpen);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(OPEN_KEY, String(open));
+    } catch {
+      /* private mode — the choice just will not survive a restart */
+    }
+  }, [open]);
 
   const refreshLive = useCallback((force = false) => {
     if (force) setReloading(true);
@@ -83,7 +101,7 @@ export function UsageMeters({ onOpenDetails, accounts }: Props) {
     // refresh keeps showing the last good numbers until new ones land.
     setLive(null);
     setLiveError(null);
-    if (tokenMode) return;
+    if (tokenMode || !open) return;
     refreshLive();
     api
       .getLimits()
@@ -96,7 +114,7 @@ export function UsageMeters({ onOpenDetails, accounts }: Props) {
     return () => {
       alive = false;
     };
-  }, [accounts.active, tokenMode, refresh, refreshLive]);
+  }, [accounts.active, tokenMode, open, refresh, refreshLive]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), CLOCK_MS);
@@ -104,13 +122,13 @@ export function UsageMeters({ onOpenDetails, accounts }: Props) {
   }, []);
 
   useEffect(() => {
-    if (tokenMode) return;
+    if (tokenMode || !open) return;
     const t = setInterval(() => {
       refreshLive();
       refresh(limits);
     }, LIVE_REFRESH_MS);
     return () => clearInterval(t);
-  }, [limits, tokenMode, refresh, refreshLive]);
+  }, [limits, tokenMode, open, refresh, refreshLive]);
 
   const useLive = live !== null && (live.five_hour !== null || live.seven_day !== null);
   // A failed refresh is only worth reporting when there is nothing to show in
@@ -119,12 +137,21 @@ export function UsageMeters({ onOpenDetails, accounts }: Props) {
   const ageMs = live ? now - live.fetched_at : 0;
   const stale = useLive && ageMs > 120_000;
   if (tokenMode) return null;
-  if (!useLive && !data && !liveError) return null;
+  if (open && !useLive && !data && !liveError) return null;
 
   return (
     <section className="meters">
       <header className="meters-head">
-        <span className="meters-title">Usage</span>
+        <button
+          className="meters-toggle"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          title={open ? "Hide usage" : "Show usage"}
+        >
+          <ChevronIcon open={open} />
+          <span className="meters-title">Usage</span>
+        </button>
+        {open && (
         <span className="meters-actions">
           <button
             className={"meters-reload" + (reloading ? " spinning" : "")}
@@ -142,12 +169,15 @@ export function UsageMeters({ onOpenDetails, accounts }: Props) {
             Details
           </button>
         </span>
+        )}
       </header>
 
-      {showError && <p className="meters-error">{liveError}</p>}
-      {stale && <p className="meters-stale">Numbers are {agoLabel(ageMs)} old — refresh pending.</p>}
+      {open && showError && <p className="meters-error">{liveError}</p>}
+      {open && stale && (
+        <p className="meters-stale">Numbers are {agoLabel(ageMs)} old — refresh pending.</p>
+      )}
 
-      {live !== null && useLive ? (
+      {!open ? null : live !== null && useLive ? (
         <>
           <LiveMeter label="Session (5hr)" w={live.five_hour} now={now} />
           <LiveMeter label="Weekly (7 day)" w={live.seven_day} now={now} />
