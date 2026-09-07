@@ -127,7 +127,7 @@ export function UsageDialog({ activePath, onClose }: Props) {
             <h3 className="group-label">Window limits</h3>
             <div className="limits-row">
               <p className="muted limits-note">
-                Easy Switch measures your rolling 5-hour and 7-day usage from local transcripts. Set
+                Claude Code manager measures your rolling 5-hour and 7-day usage from local transcripts. Set
                 your plan's token allowance to turn those meters into percentages.
               </p>
               <label className="limit-field">

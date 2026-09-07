@@ -1,4 +1,4 @@
-// Easy Switch — a project launcher that runs the Claude Code VS Code extension
+// Claude Code manager — a project launcher that runs the Claude Code VS Code extension
 // inside the app.
 //
 // The Rust side owns:

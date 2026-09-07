@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Easy Switch",
+  "productName": "Claude Code manager",
   "version": "0.1.0",
   "identifier": "com.suman.easy-switch",
   "build": {

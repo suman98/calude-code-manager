@@ -1,7 +1,7 @@
 // Claude account switching.
 //
 // Claude Code picks its identity from `CLAUDE_CODE_OAUTH_TOKEN` when that is
-// set, and otherwise from the keychain login. Easy Switch mirrors that: the
+// set, and otherwise from the keychain login. Claude Code manager mirrors that: the
 // user registers token-backed accounts, picks one, and the VS Code server is
 // respawned with (or without) the variable.
 //

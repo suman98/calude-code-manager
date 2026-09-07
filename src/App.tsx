@@ -147,7 +147,7 @@ export default function App() {
   }, []);
 
   const removeProject = useCallback(async (p: Project) => {
-    if (!confirm(`Remove “${p.name}” from Easy Switch?\nThe folder is not deleted.`)) return;
+    if (!confirm(`Remove “${p.name}” from Claude Code manager?\nThe folder is not deleted.`)) return;
     try {
       await api.closeVscode(p.path).catch(() => {});
       setOpenIds((ids) => ids.filter((id) => id !== p.path));
