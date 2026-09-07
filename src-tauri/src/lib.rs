@@ -388,6 +388,8 @@ pub fn run() {
             vscode::hide_vscode,
             vscode::close_vscode,
             vscode::send_vscode_command,
+            vscode::set_vscode_mode,
+            vscode::get_vscode_mode,
             sessions::list_sessions,
             sessions::project_usage,
             sessions::usage_overview,

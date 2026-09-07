@@ -17,9 +17,7 @@ extension host. So the app hosts one:
    (~150 MB, handled by VS Code itself).
 2. It installs `anthropic.claude-code` into the app's private extensions dir.
 3. It drops in a tiny generated workspace extension, **easy-switch-layout**,
-   which on every window: applies the chrome-free settings, closes the side bar,
-   secondary side bar and panel, and runs
-   `claude-vscode.primaryEditor.open` so Claude Code owns the whole editor area.
+   which applies the layout for the current mode on every window (see below).
 4. Each project is shown in a native **child webview** pointed at
    `http://127.0.0.1:<port>/?folder=<project>`.
 
@@ -36,6 +34,25 @@ Two implementation notes worth keeping:
 
 The React layer is only the sidebar and window chrome; it tells Rust where to
 place the VS Code webview and which project to show.
+
+## Claude / Code modes
+
+The header has a **Claude | Code** switch (`⌘E`):
+
+- **Claude** — activity bar, status bar, tabs and breadcrumbs hidden; side bar,
+  secondary side bar and panel closed; `claude-vscode.primaryEditor.open` gives
+  Claude Code the whole editor area.
+- **Code** — a normal editor: explorer, tabs, breadcrumbs and status bar back,
+  with the secondary side bar and panel closed so Copilot's chat pane stays out
+  of the way. Any open Claude tab stays open, so switching back is instant.
+
+The mode is written to `easy-switch-mode.json` in the VS Code data dir *and*
+pushed as a command, so live windows react immediately and windows opened later
+come up in the same mode. VS Code settings are global, so the mode applies to
+every project window rather than per project.
+
+The helper writes a small rolling diagnostic log to `easy-switch-helper.log`
+alongside it, which is what to read first if a layout ever fails to apply.
 
 ## Chats and usage
 
@@ -74,9 +91,10 @@ tracked separately because they dwarf everything else.
   panes to resize (double-click a handle to snap it back to its minimum); widths
   and collapsed state persist. Collapse either side pane with the two buttons in
   the header or `⌘1` / `⌘2`.
+- **Claude / Code switch** — `⌘E`, or the segmented control in the header.
 - **Global hotkey** — `⌘⇧O` (Ctrl+Shift+O) summons the window from anywhere.
 - **Keyboard** — `↑`/`↓` move, `↵` open, `⌘D` favorite, `⌘⌫` remove, `⌘K` or `/`
-  focus search, `⌘1` projects pane, `⌘2` chats pane.
+  focus search, `⌘1` projects pane, `⌘2` chats pane, `⌘E` Claude/Code.
 
 Dragging a split handle hides the embedded VS Code for the duration: it is a
 native webview layered over the page, so it would otherwise swallow the pointer

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Project, type ServerStatus } from "../lib/api";
+import { api, type Project, type ServerStatus, type VscodeMode } from "../lib/api";
 import { parentPath } from "../lib/format";
 import { PanelLeftIcon, PanelChatsIcon } from "./icons";
 
@@ -11,6 +11,8 @@ interface Props {
   firstPane: boolean;
   showProjects: boolean;
   showChats: boolean;
+  mode: VscodeMode;
+  onMode: (mode: VscodeMode) => void;
   onToggleProjects: () => void;
   onToggleChats: () => void;
   onRetry: () => void;
@@ -23,6 +25,8 @@ export function VscodeView({
   firstPane,
   showProjects,
   showChats,
+  mode,
+  onMode,
   onToggleProjects,
   onToggleChats,
   onRetry,
@@ -132,6 +136,26 @@ export function VscodeView({
         )}
 
         <div className="pane-actions">
+          {project && (
+            <div className="mode-switch" role="group" aria-label="Editor mode">
+              <button
+                className={mode === "claude" ? "on" : ""}
+                onClick={() => onMode("claude")}
+                aria-pressed={mode === "claude"}
+                title="Claude Code only (⌘E)"
+              >
+                Claude
+              </button>
+              <button
+                className={mode === "code" ? "on" : ""}
+                onClick={() => onMode("code")}
+                aria-pressed={mode === "code"}
+                title="Source code — explorer, tabs, status bar (⌘E)"
+              >
+                Code
+              </button>
+            </div>
+          )}
           {project && (
             <button className="mini-btn" onClick={() => api.reveal(project.path)}>
               Reveal

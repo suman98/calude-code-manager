@@ -81,6 +81,8 @@ export interface UsageWindows {
   now: number;
 }
 
+export type VscodeMode = "claude" | "code";
+
 export interface Limits {
   session_tokens: number | null;
   weekly_tokens: number | null;
@@ -129,6 +131,8 @@ export const api = {
       weeklyTokens: limits.weekly_tokens,
     }),
   newChat: () => invoke<void>("send_vscode_command", { command: "newChat", sessionId: null }),
+  setMode: (mode: VscodeMode) => invoke<VscodeMode>("set_vscode_mode", { mode }),
+  getMode: () => invoke<VscodeMode>("get_vscode_mode"),
   openSession: (sessionId: string) =>
     invoke<void>("send_vscode_command", { command: "openSession", sessionId }),
 };

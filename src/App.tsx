@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { api, pickFolder, type Project, type ServerStatus } from "./lib/api";
+import { api, pickFolder, type Project, type ServerStatus, type VscodeMode } from "./lib/api";
 import { Sidebar, flatList } from "./components/Sidebar";
 import { VscodeView } from "./components/VscodeView";
 import { ImportDialog } from "./components/ImportDialog";
@@ -49,6 +49,7 @@ export default function App() {
   const [projectsWidth, setProjectsWidth] = useState(() => stored("es.projectsWidth", 290));
   const [chatsWidth, setChatsWidth] = useState(() => stored("es.chatsWidth", 268));
   const [resizing, setResizing] = useState(false);
+  const [mode, setMode] = useState<VscodeMode>("claude");
 
   useEffect(() => remember("es.showProjects", showProjects), [showProjects]);
   useEffect(() => remember("es.showChats", showChats), [showChats]);
@@ -158,6 +159,16 @@ export default function App() {
     }
   }, [flash, selectProject]);
 
+  // The mode lives in the VS Code data dir so new windows come up matching.
+  useEffect(() => {
+    api.getMode().then(setMode).catch(() => {});
+  }, []);
+
+  const changeMode = useCallback((next: VscodeMode) => {
+    setMode(next);
+    api.setMode(next).catch(() => {});
+  }, []);
+
   const retryServer = useCallback(() => {
     setStatus({ phase: "starting", message: "Starting…", port: null });
     void api.ensureServer();
@@ -188,6 +199,11 @@ export default function App() {
         setShowChats((v) => !v);
         return;
       }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        changeMode(mode === "claude" ? "code" : "claude");
+        return;
+      }
 
       const inSearch = document.activeElement === searchRef.current;
 
@@ -214,7 +230,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showImport, showUsage, showProjects, flat, selectedIndex, query, selectProject, toggleFavorite, removeProject]);
+  }, [showImport, showUsage, showProjects, mode, changeMode, flat, selectedIndex, query, selectProject, toggleFavorite, removeProject]);
 
   const chatsVisible = showChats && !!activeProject;
   const maxProjects = Math.max(PROJECTS_MIN, window.innerWidth - PANE_MIN - (chatsVisible ? chatsWidth : 0));
@@ -294,6 +310,8 @@ export default function App() {
             firstPane={firstPane === "main"}
             showProjects={showProjects}
             showChats={showChats}
+            mode={mode}
+            onMode={changeMode}
             onToggleProjects={() => setShowProjects((v) => !v)}
             onToggleChats={() => setShowChats((v) => !v)}
             onRetry={retryServer}

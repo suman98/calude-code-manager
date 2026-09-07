@@ -370,6 +370,21 @@ pub fn hide_vscode(vscode: State<Vscode>) {
     }
 }
 
+fn nonce() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn push_command(data_dir: &PathBuf, payload: serde_json::Value) -> Result<(), String> {
+    std::fs::write(
+        data_dir.join(COMMAND_FILE),
+        serde_json::to_string(&payload).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
+}
+
 /// Ask the embedded helper extension to do something (start a new chat, open a
 /// past session). The helper polls this file, so no extra IPC surface is needed.
 #[tauri::command]
@@ -378,21 +393,43 @@ pub fn send_vscode_command(
     command: String,
     session_id: Option<String>,
 ) -> Result<(), String> {
-    let data_dir = server_data_dir(&app);
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    let payload = serde_json::json!({
-        "nonce": nonce,
-        "command": command,
-        "sessionId": session_id,
-    });
-    std::fs::write(
-        data_dir.join(COMMAND_FILE),
-        serde_json::to_string(&payload).map_err(|e| e.to_string())?,
+    push_command(
+        &server_data_dir(&app),
+        serde_json::json!({
+            "nonce": nonce(),
+            "command": command,
+            "sessionId": session_id,
+        }),
     )
-    .map_err(|e| e.to_string())
+}
+
+/// Switch the embedded VS Code between the Claude Code surface and a normal
+/// editor. The mode is written to disk as well as pushed, so windows opened
+/// later come up in the same mode.
+#[tauri::command]
+pub fn set_vscode_mode(app: AppHandle, mode: String) -> Result<String, String> {
+    let mode = if mode == "code" { "code" } else { "claude" };
+    let data_dir = server_data_dir(&app);
+    std::fs::write(
+        data_dir.join(MODE_FILE),
+        serde_json::to_string(&serde_json::json!({ "mode": mode })).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    push_command(
+        &data_dir,
+        serde_json::json!({ "nonce": nonce(), "command": "setMode", "mode": mode }),
+    )?;
+    Ok(mode.to_string())
+}
+
+#[tauri::command]
+pub fn get_vscode_mode(app: AppHandle) -> String {
+    std::fs::read_to_string(server_data_dir(&app).join(MODE_FILE))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("mode").and_then(|m| m.as_str()).map(String::from))
+        .filter(|m| m == "code")
+        .unwrap_or_else(|| "claude".to_string())
 }
 
 #[tauri::command]
@@ -433,7 +470,7 @@ const HELPER_PACKAGE_JSON: &str = r#"{
   "displayName": "Easy Switch Layout",
   "description": "Opens Claude Code as the only surface in the window.",
   "publisher": "easyswitch",
-  "version": "1.0.3",
+  "version": "1.0.6",
   "engines": { "vscode": "^1.94.0" },
   "main": "./extension.js",
   "activationEvents": ["onStartupFinished"],
@@ -453,29 +490,56 @@ const path = require("path");
 // Easy Switch drops commands here; <server-data-dir>/easy-switch-cmd.json sits
 // two levels above this extension folder.
 const COMMAND_FILE = path.resolve(__dirname, "..", "..", "easy-switch-cmd.json");
+const MODE_FILE = path.resolve(__dirname, "..", "..", "easy-switch-mode.json");
+const LOG_FILE = path.resolve(__dirname, "..", "..", "easy-switch-helper.log");
+
+function log(msg) {
+  try {
+    // Keep the diagnostic log from growing without bound.
+    try {
+      if (fs.statSync(LOG_FILE).size > 64 * 1024) fs.unlinkSync(LOG_FILE);
+    } catch (_) {}
+    fs.appendFileSync(LOG_FILE, `${new Date().toISOString()} ${msg}\n`);
+  } catch (_) {}
+}
 
 // VS Code for the Web keeps user settings in browser storage, not in the
 // server's user-data-dir, so the layout has to be applied through the API.
-const LAYOUT = {
+// The app's own window chrome replaces VS Code's, in both modes.
+const BASE = {
   "security.workspace.trust.enabled": false,
   "window.customTitleBarVisibility": "never",
   "window.commandCenter": false,
   "window.menuBarVisibility": "hidden",
-  "workbench.activityBar.location": "hidden",
-  "workbench.statusBar.visible": false,
-  "workbench.editor.showTabs": "none",
-  "workbench.editor.editorActionsLocation": "hidden",
-  "workbench.editor.empty.hint": "hidden",
   "workbench.startupEditor": "none",
   "workbench.layoutControl.enabled": false,
   "workbench.tips.enabled": false,
   "workbench.colorTheme": "Default Dark Modern",
-  "breadcrumbs.enabled": false,
   "chat.commandCenter.enabled": false,
   "telemetry.telemetryLevel": "off",
   "update.mode": "none",
   "extensions.autoCheckUpdates": false,
   "extensions.ignoreRecommendations": true,
+};
+
+// Claude Code owns the whole surface.
+const CLAUDE_LAYOUT = {
+  "workbench.activityBar.location": "hidden",
+  "workbench.statusBar.visible": false,
+  "workbench.editor.showTabs": "none",
+  "workbench.editor.editorActionsLocation": "hidden",
+  "workbench.editor.empty.hint": "hidden",
+  "breadcrumbs.enabled": false,
+};
+
+// A normal editor: explorer, tabs, status bar.
+const CODE_LAYOUT = {
+  "workbench.activityBar.location": "default",
+  "workbench.statusBar.visible": true,
+  "workbench.editor.showTabs": "multiple",
+  "workbench.editor.editorActionsLocation": "default",
+  "workbench.editor.empty.hint": "text",
+  "breadcrumbs.enabled": true,
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -489,11 +553,20 @@ async function run(cmd) {
   }
 }
 
-async function applyLayoutSettings() {
+function readMode() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(MODE_FILE, "utf8"));
+    return raw && raw.mode === "code" ? "code" : "claude";
+  } catch (_) {
+    return "claude";
+  }
+}
+
+async function applySettings(map) {
   const cfg = vscode.workspace.getConfiguration();
   let changed = false;
-  for (const key of Object.keys(LAYOUT)) {
-    const want = LAYOUT[key];
+  for (const key of Object.keys(map)) {
+    const want = map[key];
     let current;
     try {
       current = cfg.inspect(key);
@@ -507,6 +580,26 @@ async function applyLayoutSettings() {
     } catch (_) {}
   }
   return changed;
+}
+
+async function applyLayoutSettings() {
+  return applySettings(BASE);
+}
+
+async function applyMode(mode) {
+  const changed = await applySettings(mode === "code" ? CODE_LAYOUT : CLAUDE_LAYOUT);
+  log(`applyMode ${mode} changed=${changed}`);
+  if (mode === "code") {
+    // Bring the file tree back; keep the secondary bar (Copilot chat) out of it.
+    await run("workbench.action.closeAuxiliaryBar");
+    await run("workbench.action.closePanel");
+    await run("workbench.view.explorer");
+  } else {
+    await collapseChrome();
+    await openClaude();
+    await sleep(300);
+    await collapseChrome();
+  }
 }
 
 function claudeTabOpen() {
@@ -562,7 +655,10 @@ async function openSession(sessionId) {
 
 async function handleCommand(msg) {
   if (msg.command === "newChat" || msg.command === "openSession") {
+    await applyMode("claude");
     await openSession(msg.sessionId);
+  } else if (msg.command === "setMode") {
+    await applyMode(msg.mode === "code" ? "code" : "claude");
   }
 }
 
@@ -580,7 +676,8 @@ function watchCommands(context) {
     const first = lastNonce === null;
     lastNonce = msg.nonce;
     if (first) return;
-    handleCommand(msg).catch(() => {});
+    log(`command ${msg.command} mode=${msg.mode || "-"}`);
+    handleCommand(msg).catch((e) => log(`command failed: ${e}`));
   };
   tick();
   const timer = setInterval(tick, 400);
@@ -601,11 +698,9 @@ async function activate(context) {
 
   watchCommands(context);
 
-  await collapseChrome();
-  await sleep(300);
-  await openClaude();
-  await sleep(400);
-  await collapseChrome();
+  const mode = readMode();
+  log(`activate mode=${mode} trusted=${vscode.workspace.isTrusted}`);
+  await applyMode(mode);
 }
 
 module.exports = { activate, deactivate() {} };
@@ -668,9 +763,10 @@ fn install_claude_extension(data_dir: &PathBuf) -> Result<(), String> {
 }
 
 const COMMAND_FILE: &str = "easy-switch-cmd.json";
+const MODE_FILE: &str = "easy-switch-mode.json";
 const HELPER_ID: &str = "easyswitch.easy-switch-layout";
-const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.3";
-const HELPER_VERSION: &str = "1.0.3";
+const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.6";
+const HELPER_VERSION: &str = "1.0.6";
 
 /// Drop in a tiny workspace extension that hides the IDE chrome and opens
 /// Claude Code in the editor area on every window.
