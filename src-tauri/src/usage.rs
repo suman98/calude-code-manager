@@ -7,7 +7,8 @@
 // as the Authorization header to api.anthropic.com, which issued it.
 
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Mutex;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use serde_json::Value;
@@ -15,6 +16,40 @@ use serde_json::Value;
 const KEYCHAIN_SERVICE: &str = "Claude Code-credentials";
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const OAUTH_BETA: &str = "oauth-2025-04-20";
+
+/// How long a fetched answer is reused as-is. The windows move slowly and the
+/// endpoint throttles aggressively, so re-asking more often than this only
+/// earns 429s — including from React's double-invoked mount effects.
+const FRESH: Duration = Duration::from_secs(60);
+/// How long a cached answer keeps being shown after a failed refresh, rather
+/// than blanking working numbers over a transient hiccup.
+const STALE_OK: Duration = Duration::from_secs(60 * 60);
+
+struct Cached {
+    /// which token produced it, so switching accounts never reuses the answer
+    key: u64,
+    usage: LiveUsage,
+    at: Instant,
+}
+
+/// Minimum gap between network attempts after one fails, so a throttled
+/// endpoint is not hammered by every poll and Retry press.
+const FAIL_BACKOFF: Duration = Duration::from_secs(60);
+/// Floor between forced refreshes, so holding the reload button still cannot
+/// turn into a request flood.
+const FORCE_FLOOR: Duration = Duration::from_secs(3);
+
+static CACHE: Mutex<Option<Cached>> = Mutex::new(None);
+static LAST_FAIL: Mutex<Option<(u64, Instant, String)>> = Mutex::new(None);
+
+fn token_key(token: &str) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in token.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
 
 #[derive(Serialize, Clone, Copy, Debug)]
 pub struct LiveWindow {
@@ -119,23 +154,96 @@ fn access_token() -> Result<String, String> {
 
 /// Usage for whichever account Claude Code would actually run as: the selected
 /// token if one is switched on, else the keychain login.
+///
+/// `async` so Tauri runs it off the main thread — the HTTP call blocks.
 #[tauri::command]
-pub fn claude_usage(app: tauri::AppHandle) -> Result<LiveUsage, String> {
+pub async fn claude_usage(app: tauri::AppHandle, force: Option<bool>) -> Result<LiveUsage, String> {
+    let force = force.unwrap_or(false);
     let token = match crate::active_token(&app) {
         Some(t) => t,
         None => access_token()?,
     };
+    let key = token_key(&token);
+
+    // Holding the lock for the whole operation makes concurrent callers queue
+    // and then hit the cache, so a double-invoked effect asks the API once.
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(c) = cache.as_ref() {
+        let ttl = if force { FORCE_FLOOR } else { FRESH };
+        if c.key == key && c.at.elapsed() < ttl {
+            return Ok(c.usage.clone());
+        }
+    }
+
+    // Recently failed for this same token? Don't add to the pile-up — unless the
+    // user explicitly asked for a refresh, which must actually go and look.
+    {
+        let fail = LAST_FAIL.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((k, at, msg)) = fail.as_ref() {
+            let gap = if force { FORCE_FLOOR } else { FAIL_BACKOFF };
+            if *k == key && at.elapsed() < gap {
+                if let Some(c) = cache.as_ref() {
+                    if c.key == key && c.at.elapsed() < STALE_OK {
+                        return Ok(c.usage.clone());
+                    }
+                }
+                return Err(msg.clone());
+            }
+        }
+    }
+
+    let fresh = fetch_usage(&token);
+    match fresh {
+        Ok(usage) => {
+            *cache = Some(Cached {
+                key,
+                usage: usage.clone(),
+                at: Instant::now(),
+            });
+            *LAST_FAIL.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            Ok(usage)
+        }
+        Err(e) => {
+            *LAST_FAIL.lock().unwrap_or_else(|x| x.into_inner()) =
+                Some((key, Instant::now(), e.clone()));
+            // Prefer slightly old numbers over an empty meter.
+            if let Some(c) = cache.as_ref() {
+                if c.key == key && c.at.elapsed() < STALE_OK {
+                    return Ok(c.usage.clone());
+                }
+            }
+            Err(e)
+        }
+    }
+}
+
+fn fetch_usage(token: &str) -> Result<LiveUsage, String> {
     let resp = ureq::get(USAGE_URL)
         .set("Authorization", &format!("Bearer {token}"))
         .set("anthropic-beta", OAUTH_BETA)
         .set("Accept", "application/json")
-        .timeout(std::time::Duration::from_secs(10))
+        .set("User-Agent", concat!("easy-switch/", env!("CARGO_PKG_VERSION")))
+        .timeout(Duration::from_secs(10))
         .call();
 
     let body: Value = match resp {
         Ok(r) => r.into_json().map_err(|e| format!("bad usage payload: {e}"))?,
         Err(ureq::Error::Status(401, _)) => {
-            return Err("Claude Code login is no longer valid — sign in again".into())
+            return Err("This account's token was rejected — sign in again.".into())
+        }
+        Err(ureq::Error::Status(403, _)) => {
+            return Err("This token is not allowed to read usage.".into())
+        }
+        // Anthropic throttles this endpoint independently of the account's own
+        // quota, so a 429 usually just means "asked too soon".
+        Err(ureq::Error::Status(429, r)) => {
+            let after = r
+                .header("retry-after")
+                .and_then(|v| v.parse::<i64>().ok())
+                .filter(|s| *s > 60)
+                .map(|secs| format!(" Retrying in about {}m.", (secs + 59) / 60))
+                .unwrap_or_default();
+            return Err(format!("Claude is rate-limiting usage checks.{after}"));
         }
         Err(ureq::Error::Status(code, _)) => return Err(format!("usage request failed ({code})")),
         Err(e) => return Err(format!("usage request failed: {e}")),

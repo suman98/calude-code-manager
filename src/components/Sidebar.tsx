@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type Project } from "../lib/api";
+import { type AccountState, type Project } from "../lib/api";
 import { fuzzyScore, parentPath, relativeTime } from "../lib/format";
 import { UsageMeters } from "./UsageMeters";
 import { SearchIcon, FolderIcon, GripIcon } from "./icons";
@@ -24,6 +24,7 @@ interface Props {
   onAdd: () => void;
   onImport: () => void;
   onShowUsage: () => void;
+  accounts: AccountState;
   searchRef: React.RefObject<HTMLInputElement | null>;
   rowRefs: React.RefObject<(HTMLDivElement | null)[]>;
 }
@@ -105,6 +106,7 @@ export function Sidebar({
   onAdd,
   onImport,
   onShowUsage,
+  accounts,
   searchRef,
   rowRefs,
 }: Props) {
@@ -445,7 +447,7 @@ export function Sidebar({
         ))}
       </div>
 
-      <UsageMeters onOpenDetails={onShowUsage} />
+      <UsageMeters onOpenDetails={onShowUsage} accounts={accounts} />
 
       <div className="sidebar-foot">
         <button className="ghost-btn" onClick={onImport}>

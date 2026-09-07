@@ -564,6 +564,52 @@ body.dnd-active .row:hover:not(.dragging) {
   color: var(--text-faint);
 }
 
+.meters-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.meters-reload {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-faint);
+}
+
+.meters-reload:hover:not(:disabled) {
+  background: var(--bg-row-hover);
+  color: var(--text);
+}
+
+.meters-reload:disabled {
+  cursor: default;
+  color: var(--text-faint);
+}
+
+.meters-reload.spinning svg {
+  animation: meter-spin 700ms linear infinite;
+}
+
+@keyframes meter-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.meters-stale {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.meters-error {
+  font-size: 11px;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--danger) 70%, var(--text));
+}
+
 .meter {
   display: flex;
   flex-direction: column;

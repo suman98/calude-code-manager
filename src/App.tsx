@@ -340,6 +340,7 @@ export default function App() {
             onAdd={addFolder}
             onImport={() => setShowImport(true)}
             onShowUsage={() => setShowUsage(true)}
+            accounts={accounts}
             searchRef={searchRef}
             rowRefs={rowRefs}
           />

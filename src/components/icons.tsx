@@ -95,3 +95,25 @@ export function HistoryIcon() {
     </svg>
   );
 }
+
+export function RefreshIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+      <path
+        d="M13.2 8a5.2 5.2 0 1 1-1.6-3.75"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <path
+        d="M13.6 2.2v3h-3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

@@ -154,7 +154,7 @@ export const api = {
   listSessions: (path: string) => invoke<SessionSummary[]>("list_sessions", { path }),
   projectUsage: (path: string) => invoke<Totals>("project_usage", { path }),
   usageOverview: () => invoke<UsageOverview>("usage_overview"),
-  claudeUsage: () => invoke<LiveUsage>("claude_usage"),
+  claudeUsage: (force = false) => invoke<LiveUsage>("claude_usage", { force }),
   accountState: () => invoke<AccountState>("account_state"),
   addAccount: (label: string, token: string) =>
     invoke<AccountState>("add_account", { label, token }),
