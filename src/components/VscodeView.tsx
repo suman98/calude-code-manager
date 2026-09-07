@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Project, type ServerStatus, type VscodeMode } from "../lib/api";
 import { parentPath } from "../lib/format";
-import { PanelLeftIcon, PanelChatsIcon } from "./icons";
+import { PanelLeftIcon, HistoryIcon } from "./icons";
 
 interface Props {
   project: Project | null;
@@ -106,7 +106,14 @@ export function VscodeView({
   return (
     <div className="pane">
       <header
-        className={"pane-top pane-head" + (firstPane ? " with-traffic" : "")}
+        className={
+          "pane-top pane-head" +
+          (firstPane ? " with-traffic" : "") +
+          (project ? " tinted" : "")
+        }
+        style={
+          project?.color ? ({ "--proj-color": project.color } as React.CSSProperties) : undefined
+        }
         data-tauri-drag-region
       >
         <div className="pane-toggles">
@@ -124,7 +131,7 @@ export function VscodeView({
             title="Toggle chat history (⌘2)"
             aria-pressed={showChats}
           >
-            <PanelChatsIcon />
+            <HistoryIcon />
           </button>
         </div>
 

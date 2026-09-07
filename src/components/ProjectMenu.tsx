@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type Project } from "../lib/api";
 
@@ -38,6 +38,24 @@ export function ProjectMenu({
 }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number }>({ top: -9999, left: -9999 });
+
+  // Anything not in the preset row came from the native colour panel.
+  const preset = PROJECT_COLORS.includes(project.color as (typeof PROJECT_COLORS)[number]);
+  const custom = project.color && !preset ? project.color : null;
+
+  // The panel streams a colour as you drag inside it. Persist at a lazy rate so
+  // the app tints live without a write per frame; the final value always lands
+  // on the input's change event.
+  const lastLive = useRef(0);
+  const onLive = useCallback(
+    (value: string) => {
+      const now = Date.now();
+      if (now - lastLive.current < 200) return;
+      lastLive.current = now;
+      onColor(value);
+    },
+    [onColor],
+  );
 
   useLayoutEffect(() => {
     const a = anchor.getBoundingClientRect();
@@ -86,6 +104,19 @@ export function ProjectMenu({
             aria-label={`Colour ${c}`}
           />
         ))}
+        <label
+          className={"pm-swatch pm-custom" + (custom ? " on" : "")}
+          style={custom ? { background: custom } : undefined}
+          title="Custom colour…"
+        >
+          <input
+            type="color"
+            value={project.color ?? "#6e8bff"}
+            onInput={(e) => onLive(e.currentTarget.value)}
+            onChange={(e) => onColor(e.currentTarget.value)}
+            aria-label="Custom colour"
+          />
+        </label>
         <button
           className={"pm-swatch pm-none" + (!project.color ? " on" : "")}
           onClick={() => onColor(null)}

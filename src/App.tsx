@@ -42,7 +42,9 @@ function remember(key: string, value: unknown) {
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [query, setQuery] = useState("");
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  // -1 = nothing keyboard-selected, so no row wears the selection ring until the
+  // user actually arrows through the list.
+  const [selectedIndex, setSelectedIndex] = useState(-1);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [openIds, setOpenIds] = useState<string[]>([]);
   const [status, setStatus] = useState<ServerStatus>(INITIAL_STATUS);
@@ -257,10 +259,10 @@ export default function App() {
 
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedIndex((s) => Math.min(s + 1, flat.length - 1));
+        setSelectedIndex((s) => (s < 0 ? 0 : Math.min(s + 1, flat.length - 1)));
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSelectedIndex((s) => Math.max(s - 1, 0));
+        setSelectedIndex((s) => (s < 0 ? 0 : Math.max(s - 1, 0)));
       } else if (e.key === "Enter" && (inSearch || document.activeElement === document.body)) {
         if (flat[selectedIndex]) selectProject(flat[selectedIndex]);
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d") {
@@ -301,9 +303,13 @@ export default function App() {
             selectedIndex={selectedIndex}
             onQuery={(q) => {
               setQuery(q);
-              setSelectedIndex(0);
+              setSelectedIndex(q.trim() ? 0 : -1);
             }}
-            onSelect={selectProject}
+            onSelect={(p) => {
+              // A click is a mouse gesture — drop the keyboard ring.
+              setSelectedIndex(-1);
+              selectProject(p);
+            }}
             onToggleFavorite={toggleFavorite}
             onRemove={removeProject}
             onReorder={reorderProjects}
