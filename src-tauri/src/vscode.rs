@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
@@ -518,7 +518,7 @@ const HELPER_PACKAGE_JSON: &str = r#"{
   "displayName": "Easy Switch Layout",
   "description": "Opens Claude Code as the only surface in the window.",
   "publisher": "easyswitch",
-  "version": "1.0.8",
+  "version": "1.0.10",
   "engines": { "vscode": "^1.94.0" },
   "main": "./extension.js",
   "activationEvents": ["onStartupFinished"],
@@ -719,6 +719,11 @@ async function applyMode(mode) {
     await run("workbench.action.closeAuxiliaryBar");
     await run("workbench.action.closePanel");
     await run("workbench.view.explorer");
+    // Code mode still opens on Claude Code — as a tab beside the explorer,
+    // alongside whatever else is already open rather than replacing it.
+    const opened = await openClaude(false);
+    log(`code mode claude tab=${opened}`);
+    await run("workbench.view.explorer");
   } else {
     await collapseChrome();
     await openClaude();
@@ -748,11 +753,13 @@ async function claudeReady() {
   return cmds.includes("claude-vscode.primaryEditor.open");
 }
 
-async function openClaude() {
+// `exclusive` clears the editor area first — right when Claude Code is the whole
+// surface, wrong in code mode where it would close the user's open files.
+async function openClaude(exclusive = true) {
   for (let i = 0; i < 60; i++) {
     if (claudeTabOpen()) return true;
     if (await claudeReady()) {
-      await run("workbench.action.closeAllEditors");
+      if (exclusive) await run("workbench.action.closeAllEditors");
       await run("claude-vscode.primaryEditor.open");
       await sleep(600);
       if (claudeTabOpen()) return true;
@@ -877,8 +884,18 @@ fn extension_installed(data_dir: &PathBuf, id: &str) -> bool {
         .any(|e| e.file_name().to_string_lossy().starts_with(&prefix))
 }
 
+fn manifest_lists(data_dir: &PathBuf, id: &str) -> bool {
+    read_manifest(data_dir)
+        .iter()
+        .any(|e| entry_id(e) == Some(id))
+}
+
+/// Present on disk *and* registered. The server ignores — and eventually
+/// removes — any folder the manifest omits, so a folder alone is not enough;
+/// reinstalling is what rebuilds a manifest that was lost or corrupted.
 fn claude_extension_installed(data_dir: &PathBuf) -> bool {
     extension_installed(data_dir, "anthropic.claude-code")
+        && manifest_lists(data_dir, "anthropic.claude-code")
 }
 
 fn read_manifest(data_dir: &PathBuf) -> Vec<serde_json::Value> {
@@ -920,9 +937,22 @@ fn restore_dropped_entries(data_dir: &PathBuf, before: &[serde_json::Value]) {
         }
     }
     if restored {
-        if let Ok(text) = serde_json::to_string(&after) {
-            let _ = std::fs::write(ext_root.join("extensions.json"), text);
-        }
+        write_manifest(&ext_root, &after);
+    }
+}
+
+/// The VS Code server reads this manifest live, so never write it in place —
+/// a torn write leaves half a document behind and the server then sees no
+/// extensions at all.
+fn write_manifest(ext_root: &Path, entries: &[serde_json::Value]) {
+    let Ok(text) = serde_json::to_string(entries) else {
+        return;
+    };
+    let tmp = ext_root.join("extensions.json.easy-switch.tmp");
+    if std::fs::write(&tmp, text).is_ok()
+        && std::fs::rename(&tmp, ext_root.join("extensions.json")).is_err()
+    {
+        let _ = std::fs::remove_file(&tmp);
     }
 }
 
@@ -955,8 +985,8 @@ const COMMAND_FILE: &str = "easy-switch-cmd.json";
 const MODE_FILE: &str = "easy-switch-mode.json";
 const THEME_FILE: &str = "easy-switch-theme.json";
 const HELPER_ID: &str = "easyswitch.easy-switch-layout";
-const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.8";
-const HELPER_VERSION: &str = "1.0.8";
+const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.10";
+const HELPER_VERSION: &str = "1.0.10";
 
 /// Drop in a tiny workspace extension that hides the IDE chrome and opens
 /// Claude Code in the editor area on every window.
@@ -1030,14 +1060,7 @@ fn write_helper_extension(data_dir: &PathBuf) {
         }
     }));
 
-    // Write through a temp file: the VS Code server reads this manifest and a
-    // torn write loses extensions.
-    if let Ok(text) = serde_json::to_string(&entries) {
-        let tmp = ext_root.join("extensions.json.easy-switch.tmp");
-        if std::fs::write(&tmp, text).is_ok() && std::fs::rename(&tmp, &manifest_path).is_err() {
-            let _ = std::fs::remove_file(&tmp);
-        }
-    }
+    write_manifest(&ext_root, &entries);
 }
 
 #[cfg(test)]
@@ -1093,6 +1116,37 @@ mod tests {
 
         restore_dropped_entries(&dir, &before);
         assert_eq!(ids(&dir), vec!["kept.ext".to_string()]);
+    }
+
+    #[test]
+    fn a_folder_the_manifest_forgets_counts_as_not_installed() {
+        let dir = scratch("forgotten");
+        let ext = extensions_dir(&dir);
+        std::fs::create_dir_all(ext.join("anthropic.claude-code-2.1.0-darwin-arm64")).unwrap();
+
+        // Folder present, manifest lists something else: the server will not
+        // load it, so we must reinstall rather than assume it works.
+        std::fs::write(
+            ext.join("extensions.json"),
+            serde_json::to_string(&vec![entry("other.ext", "other.ext-1.0.0")]).unwrap(),
+        )
+        .unwrap();
+        assert!(!claude_extension_installed(&dir));
+
+        // A corrupt manifest is likewise not proof of a working install.
+        std::fs::write(ext.join("extensions.json"), "[{\"broken\": ").unwrap();
+        assert!(!claude_extension_installed(&dir));
+
+        std::fs::write(
+            ext.join("extensions.json"),
+            serde_json::to_string(&vec![entry(
+                "anthropic.claude-code",
+                "anthropic.claude-code-2.1.0-darwin-arm64",
+            )])
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(claude_extension_installed(&dir));
     }
 
     #[test]
