@@ -498,6 +498,42 @@ fn reveal_in_file_manager(path: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Open a terminal window at the project's folder.
+///
+/// macOS's `Terminal.app` reads a folder argument as "open a window here", so
+/// that is passed explicitly; `cmd.exe` and most Linux emulators instead
+/// inherit whatever working directory *we* launch them with.
+#[tauri::command]
+fn open_in_terminal(path: String) -> Result<(), String> {
+    let path = normalize(&path);
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .args(["-a", "Terminal", path.as_str()])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/C", "start", "cmd"])
+            .current_dir(&path)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("x-terminal-emulator")
+            .current_dir(&path)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
 /// Read the folders VSCode already knows about (from its `storage.json`) so the
 /// user can bulk-import them. Only folders that still exist on disk are returned,
 /// newest-modified first. Multi-root `.code-workspace` files are skipped.
@@ -680,6 +716,7 @@ pub fn run() {
             clear_project_icon,
             touch_project,
             reveal_in_file_manager,
+            open_in_terminal,
             discover_vscode_projects,
             vscode::server_status,
             vscode::ensure_server,

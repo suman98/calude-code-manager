@@ -197,8 +197,12 @@ export function VscodeView({
             {activeAccount ? activeAccount.label : "Default"}
           </button>
           {project && (
-            <button className="mini-btn" onClick={() => api.reveal(project.path)}>
-              Reveal
+            <button
+              className="mini-btn"
+              onClick={() => api.openTerminal(project.path)}
+              title="Open in Terminal"
+            >
+              Terminal
             </button>
           )}
         </div>
