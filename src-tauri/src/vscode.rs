@@ -194,6 +194,18 @@ pub fn ensure_server(app: AppHandle, vscode: State<Vscode>) {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
+        // Claude Code inside the server reads its identity from the
+        // environment. An unset variable means "use the keychain login", so the
+        // default account must actively clear anything inherited.
+        match crate::active_token(&app) {
+            Some(token) => {
+                cmd.env("CLAUDE_CODE_OAUTH_TOKEN", token);
+            }
+            None => {
+                cmd.env_remove("CLAUDE_CODE_OAUTH_TOKEN");
+            }
+        }
+
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {

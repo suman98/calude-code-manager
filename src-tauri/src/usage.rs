@@ -117,9 +117,14 @@ fn access_token() -> Result<String, String> {
         .ok_or_else(|| "no access token in credentials".into())
 }
 
+/// Usage for whichever account Claude Code would actually run as: the selected
+/// token if one is switched on, else the keychain login.
 #[tauri::command]
-pub fn claude_usage() -> Result<LiveUsage, String> {
-    let token = access_token()?;
+pub fn claude_usage(app: tauri::AppHandle) -> Result<LiveUsage, String> {
+    let token = match crate::active_token(&app) {
+        Some(t) => t,
+        None => access_token()?,
+    };
     let resp = ureq::get(USAGE_URL)
         .set("Authorization", &format!("Bearer {token}"))
         .set("anthropic-beta", OAUTH_BETA)

@@ -4,6 +4,7 @@ import {
   api,
   pickFolder,
   pickImage,
+  type AccountState,
   type Project,
   type ServerStatus,
   type VscodeMode,
@@ -50,6 +51,7 @@ export default function App() {
   const [status, setStatus] = useState<ServerStatus>(INITIAL_STATUS);
   const [showImport, setShowImport] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
+  const [accounts, setAccounts] = useState<AccountState>({ accounts: [], active: null });
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -219,6 +221,25 @@ export default function App() {
     api.setMode(next).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    api.accountState().then(setAccounts).catch(() => {});
+  }, []);
+
+  // A token only reaches Claude Code through the server process's environment,
+  // so switching accounts means restarting that server.
+  const applyAccounts = useCallback(
+    (next: AccountState, restart: boolean) => {
+      setAccounts(next);
+      if (!restart) return;
+      setStatus({ phase: "starting", message: "Restarting for the new account…", port: null });
+      api
+        .stopServer()
+        .then(() => api.ensureServer())
+        .catch((e) => flash(String(e)));
+    },
+    [flash],
+  );
+
   const retryServer = useCallback(() => {
     setStatus({ phase: "starting", message: "Starting…", port: null });
     void api.ensureServer();
@@ -373,6 +394,9 @@ export default function App() {
             onToggleProjects={() => setShowProjects((v) => !v)}
             onToggleChats={() => setShowChats((v) => !v)}
             onRetry={retryServer}
+            accounts={accounts}
+            onAccounts={applyAccounts}
+            onAccountError={flash}
           />
         )}
       </main>

@@ -7,6 +7,7 @@
 //      (see `vscode.rs`)
 //   3. discovering projects VS Code already knows about, for one-click import
 
+mod accounts;
 mod sessions;
 mod usage;
 mod vscode;
@@ -55,6 +56,12 @@ struct Store {
     projects: Vec<Project>,
     #[serde(default)]
     limits: Limits,
+    /// Registered Claude accounts. Labels only — tokens live in the keychain.
+    #[serde(default)]
+    accounts: Vec<accounts::Account>,
+    /// id of the account in use; `None` runs on the Claude Code keychain login
+    #[serde(default)]
+    active_account: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -264,6 +271,138 @@ fn set_project_color(
     }
     save_store(&state.store_path, &store)?;
     Ok(store.projects.clone())
+}
+
+// ── Claude account switching ────────────────────────────────────────────────
+
+/// The token Claude Code should run with, or `None` for the keychain login.
+pub fn active_token(app: &tauri::AppHandle) -> Option<String> {
+    let state = app.state::<AppState>();
+    let id = state.store.lock().unwrap().active_account.clone()?;
+    accounts::read_token(&id)
+}
+
+#[tauri::command]
+fn account_state(state: State<AppState>) -> accounts::AccountState {
+    let store = state.store.lock().unwrap();
+    accounts::AccountState {
+        accounts: store.accounts.clone(),
+        active: store.active_account.clone(),
+    }
+}
+
+#[tauri::command]
+fn add_account(
+    label: String,
+    token: String,
+    state: State<AppState>,
+) -> Result<accounts::AccountState, String> {
+    let token = token.trim().to_string();
+    if !token.starts_with("sk-ant-") {
+        return Err("That does not look like a Claude OAuth token (sk-ant-…).".into());
+    }
+    let id = format!("acct-{}", now_ms());
+    let hint = accounts::store_token(&id, &token)?;
+
+    let mut store = state.store.lock().unwrap();
+    let label = if label.trim().is_empty() {
+        format!("Token {}", store.accounts.len() + 1)
+    } else {
+        label.trim().to_string()
+    };
+    store.accounts.push(accounts::Account { id, label, hint });
+    save_store(&state.store_path, &store)?;
+    Ok(accounts::AccountState {
+        accounts: store.accounts.clone(),
+        active: store.active_account.clone(),
+    })
+}
+
+#[tauri::command]
+fn remove_account(id: String, state: State<AppState>) -> Result<accounts::AccountState, String> {
+    accounts::forget_token(&id);
+    let mut store = state.store.lock().unwrap();
+    store.accounts.retain(|a| a.id != id);
+    if store.active_account.as_deref() == Some(id.as_str()) {
+        store.active_account = None;
+    }
+    save_store(&state.store_path, &store)?;
+    Ok(accounts::AccountState {
+        accounts: store.accounts.clone(),
+        active: store.active_account.clone(),
+    })
+}
+
+/// Switch accounts. The caller restarts the VS Code server, since the token is
+/// read from the environment at spawn time.
+#[tauri::command]
+fn set_active_account(
+    id: Option<String>,
+    state: State<AppState>,
+) -> Result<accounts::AccountState, String> {
+    let mut store = state.store.lock().unwrap();
+    if let Some(want) = id.as_deref() {
+        if !store.accounts.iter().any(|a| a.id == want) {
+            return Err("No such account".into());
+        }
+        if accounts::read_token(want).is_none() {
+            return Err("That account's token is no longer in the keychain.".into());
+        }
+    }
+    store.active_account = id;
+    save_store(&state.store_path, &store)?;
+    Ok(accounts::AccountState {
+        accounts: store.accounts.clone(),
+        active: store.active_account.clone(),
+    })
+}
+
+/// Tokens already exported in the user's shell profile, so they can be adopted
+/// with one click instead of pasted.
+#[tauri::command]
+fn discover_shell_accounts(state: State<AppState>) -> Vec<String> {
+    let known: Vec<String> = state
+        .store
+        .lock()
+        .unwrap()
+        .accounts
+        .iter()
+        .map(|a| a.hint.clone())
+        .collect();
+    accounts::scan_shell_profiles()
+        .into_iter()
+        .filter(|(_, token)| !known.contains(&accounts::hint_for(token)))
+        .map(|(label, _)| label)
+        .collect()
+}
+
+/// Register a shell-profile token by its label. The token is copied straight
+/// into the keychain; it is never handed to the frontend.
+#[tauri::command]
+fn adopt_shell_account(
+    label: String,
+    name: String,
+    state: State<AppState>,
+) -> Result<accounts::AccountState, String> {
+    let (_, token) = accounts::scan_shell_profiles()
+        .into_iter()
+        .find(|(l, _)| *l == label)
+        .ok_or("That shell token is no longer there")?;
+
+    let id = format!("acct-{}", now_ms());
+    let hint = accounts::store_token(&id, &token)?;
+    let mut store = state.store.lock().unwrap();
+    let label = if name.trim().is_empty() {
+        format!("Token {}", store.accounts.len() + 1)
+    } else {
+        name.trim().to_string()
+    };
+    store.accounts.push(accounts::Account { id, label, hint });
+    save_store(&state.store_path, &store)?;
+    Ok(accounts::AccountState {
+        accounts: store.accounts.clone(),
+        active: store.active_account.clone(),
+    })
 }
 
 /// Load an image file, square-crop and shrink it to 128px, and store it on the
@@ -558,6 +697,12 @@ pub fn run() {
             sessions::usage_overview,
             sessions::usage_windows,
             usage::claude_usage,
+            account_state,
+            add_account,
+            remove_account,
+            set_active_account,
+            discover_shell_accounts,
+            adopt_shell_account,
             get_limits,
             set_limits,
         ])

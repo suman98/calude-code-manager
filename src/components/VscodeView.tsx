@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Project, type ServerStatus, type VscodeMode } from "../lib/api";
+import {
+  api,
+  type AccountState,
+  type Project,
+  type ServerStatus,
+  type VscodeMode,
+} from "../lib/api";
 import { parentPath } from "../lib/format";
 import { PanelLeftIcon, HistoryIcon } from "./icons";
+import { AccountMenu } from "./AccountMenu";
 
 interface Props {
   project: Project | null;
@@ -16,6 +23,9 @@ interface Props {
   onToggleProjects: () => void;
   onToggleChats: () => void;
   onRetry: () => void;
+  accounts: AccountState;
+  onAccounts: (s: AccountState, restart: boolean) => void;
+  onAccountError: (message: string) => void;
 }
 
 export function VscodeView({
@@ -30,13 +40,21 @@ export function VscodeView({
   onToggleProjects,
   onToggleChats,
   onRetry,
+  accounts,
+  onAccounts,
+  onAccountError,
 }: Props) {
   const slotRef = useRef<HTMLDivElement | null>(null);
   const [mountErr, setMountErr] = useState<string | null>(null);
+  const [acctAnchor, setAcctAnchor] = useState<HTMLElement | null>(null);
+
+  const activeAccount = accounts.accounts.find((a) => a.id === accounts.active) ?? null;
 
   const activeId = project?.path ?? null;
   const ready = status.phase === "ready";
-  const shouldShow = ready && !!activeId && !suppressed;
+  // The embedded editor is a native child webview stacked above the page, so no
+  // z-index can put a popover in front of it — it has to step aside instead.
+  const shouldShow = ready && !!activeId && !suppressed && !acctAnchor;
 
   const pushBounds = useCallback(
     (mount: boolean) => {
@@ -163,6 +181,22 @@ export function VscodeView({
               </button>
             </div>
           )}
+          {/* Which Claude identity the embedded editor is running as. */}
+          <button
+            className={"acct-chip" + (activeAccount ? " custom" : "")}
+            onClick={(e) => {
+              const el = e.currentTarget;
+              setAcctAnchor((a) => (a ? null : el));
+            }}
+            title={
+              activeAccount
+                ? `Claude account: ${activeAccount.label} (${activeAccount.hint})`
+                : "Claude account: default keychain login"
+            }
+          >
+            <span className="acct-dot" />
+            {activeAccount ? activeAccount.label : "Default"}
+          </button>
           {project && (
             <button className="mini-btn" onClick={() => api.reveal(project.path)}>
               Reveal
@@ -170,6 +204,16 @@ export function VscodeView({
           )}
         </div>
       </header>
+
+      {acctAnchor && (
+        <AccountMenu
+          state={accounts}
+          anchor={acctAnchor}
+          onClose={() => setAcctAnchor(null)}
+          onChanged={onAccounts}
+          onError={onAccountError}
+        />
+      )}
 
       {!project && (
         <div className="pane-empty">

@@ -85,6 +85,19 @@ export interface UsageWindows {
 
 export type VscodeMode = "claude" | "code";
 
+export interface Account {
+  id: string;
+  label: string;
+  /** masked token ends, e.g. "sk-ant-o…4f2c" */
+  hint: string;
+}
+
+export interface AccountState {
+  accounts: Account[];
+  /** null = Claude Code's own keychain login */
+  active: string | null;
+}
+
 /** Server-reported utilisation, the same figures Claude Code's /usage prints. */
 export interface LiveWindow {
   utilization: number;
@@ -127,6 +140,7 @@ export const api = {
 
   // embedded VS Code server
   ensureServer: () => invoke<void>("ensure_server"),
+  stopServer: () => invoke<void>("stop_server"),
   serverStatus: () => invoke<ServerStatus>("server_status"),
   folderUrl: (path: string) => invoke<string>("folder_url", { path }),
 
@@ -141,6 +155,14 @@ export const api = {
   projectUsage: (path: string) => invoke<Totals>("project_usage", { path }),
   usageOverview: () => invoke<UsageOverview>("usage_overview"),
   claudeUsage: () => invoke<LiveUsage>("claude_usage"),
+  accountState: () => invoke<AccountState>("account_state"),
+  addAccount: (label: string, token: string) =>
+    invoke<AccountState>("add_account", { label, token }),
+  removeAccount: (id: string) => invoke<AccountState>("remove_account", { id }),
+  setActiveAccount: (id: string | null) => invoke<AccountState>("set_active_account", { id }),
+  discoverShellAccounts: () => invoke<string[]>("discover_shell_accounts"),
+  adoptShellAccount: (label: string, name: string) =>
+    invoke<AccountState>("adopt_shell_account", { label, name }),
   usageWindows: (limits: Limits) =>
     invoke<UsageWindows>("usage_windows", {
       sessionLimit: limits.session_tokens,
