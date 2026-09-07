@@ -142,7 +142,7 @@ export function ProjectMenu({
 
       <div className="pm-sep" />
       <button className="pm-item danger" onClick={onRemove}>
-        Remove from Claude Code manager
+        Remove from Claude Manager
       </button>
     </div>,
     document.body,

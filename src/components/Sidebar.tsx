@@ -342,7 +342,7 @@ export function Sidebar({
     <aside className="sidebar" style={{ width }}>
       <div className={"pane-top" + (firstPane ? " with-traffic" : "")} data-tauri-drag-region>
         <span className="brand">
-          <span className="glyph">⇄</span> Claude Code manager
+          <span className="glyph">⇄</span> Claude Manager
         </span>
       </div>
 

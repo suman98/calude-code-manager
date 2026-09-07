@@ -515,7 +515,7 @@ const SETTINGS_JSON: &str = r#"{
 
 const HELPER_PACKAGE_JSON: &str = r#"{
   "name": "easy-switch-layout",
-  "displayName": "Claude Code manager Layout",
+  "displayName": "Claude Manager Layout",
   "description": "Opens Claude Code as the only surface in the window.",
   "publisher": "easyswitch",
   "version": "1.0.13",
@@ -535,7 +535,7 @@ const HELPER_EXTENSION_JS: &str = r##"const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
 
-// Claude Code manager drops commands here; <server-data-dir>/easy-switch-cmd.json sits
+// Claude Manager drops commands here; <server-data-dir>/easy-switch-cmd.json sits
 // two levels above this extension folder.
 const COMMAND_FILE = path.resolve(__dirname, "..", "..", "easy-switch-cmd.json");
 const MODE_FILE = path.resolve(__dirname, "..", "..", "easy-switch-mode.json");

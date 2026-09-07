@@ -1,4 +1,4 @@
-# Claude Code manager
+# Claude Manager
 
 A desktop app that runs the real **Claude Code VS Code extension** UI, one
 project at a time. Pick a project in the sidebar and its Claude Code session
