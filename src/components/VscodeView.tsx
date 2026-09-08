@@ -199,8 +199,8 @@ export function VscodeView({
           {project && (
             <button
               className="mini-btn"
-              onClick={() => api.openTerminal(project.path)}
-              title="Open in Terminal"
+              onClick={() => api.showVscodeTerminal()}
+              title="Open VS Code's terminal"
             >
               Terminal
             </button>

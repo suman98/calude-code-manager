@@ -518,7 +518,7 @@ const HELPER_PACKAGE_JSON: &str = r#"{
   "displayName": "Claude Manager Layout",
   "description": "Opens Claude Code as the only surface in the window.",
   "publisher": "easyswitch",
-  "version": "1.0.14",
+  "version": "1.0.17",
   "engines": { "vscode": "^1.94.0" },
   "main": "./extension.js",
   "activationEvents": ["onStartupFinished"],
@@ -797,6 +797,14 @@ async function handleCommand(msg) {
   } else if (msg.command === "toggleSidebar") {
     // VS Code's own Explorer/primary side bar — not this app's project list.
     await run("workbench.action.toggleSidebarVisibility");
+  } else if (msg.command === "showTerminal") {
+    // Always land on the terminal itself. `togglePanel` (what Ctrl+J runs) is
+    // direction-blind and restores whichever view was last active — Problems
+    // or Output — so reveal the terminal directly instead, making one if the
+    // window has none yet.
+    const term =
+      vscode.window.activeTerminal || vscode.window.terminals[0] || vscode.window.createTerminal();
+    term.show();
   }
 }
 
@@ -902,6 +910,23 @@ fn claude_extension_installed(data_dir: &PathBuf) -> bool {
         && manifest_lists(data_dir, "anthropic.claude-code")
 }
 
+/// A manifest that no longer parses wedges the whole extension setup: the CLI
+/// installer refuses to run, and every writer here bails rather than clobber
+/// what it cannot read. Move it aside so the installer regenerates one from the
+/// folders already on disk, keeping the broken copy for diagnosis.
+fn heal_corrupt_manifest(data_dir: &PathBuf) {
+    let path = extensions_dir(data_dir).join("extensions.json");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return; // Missing is fine — the installer writes a fresh one.
+    };
+    if serde_json::from_str::<Vec<serde_json::Value>>(&text).is_ok() {
+        return;
+    }
+    eprintln!("[easy-switch] extensions.json does not parse — rebuilding it");
+    let _ = std::fs::rename(&path, path.with_extension("json.corrupt"));
+    let _ = std::fs::remove_file(&path);
+}
+
 fn read_manifest(data_dir: &PathBuf) -> Vec<serde_json::Value> {
     std::fs::read_to_string(extensions_dir(data_dir).join("extensions.json"))
         .ok()
@@ -963,6 +988,7 @@ fn write_manifest(ext_root: &Path, entries: &[serde_json::Value]) {
 fn install_extension(data_dir: &PathBuf, id: &str) -> Result<(), String> {
     let bin = downloaded_server_bin(data_dir)
         .ok_or_else(|| "VS Code server binary not found yet".to_string())?;
+    heal_corrupt_manifest(data_dir);
     let before = read_manifest(data_dir);
     let out = Command::new(bin)
         .arg("--install-extension")
@@ -989,8 +1015,8 @@ const COMMAND_FILE: &str = "easy-switch-cmd.json";
 const MODE_FILE: &str = "easy-switch-mode.json";
 const THEME_FILE: &str = "easy-switch-theme.json";
 const HELPER_ID: &str = "easyswitch.easy-switch-layout";
-const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.14";
-const HELPER_VERSION: &str = "1.0.14";
+const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.17";
+const HELPER_VERSION: &str = "1.0.17";
 
 /// Drop in a tiny workspace extension that hides the IDE chrome and opens
 /// Claude Code in the editor area on every window.
@@ -999,6 +1025,7 @@ const HELPER_VERSION: &str = "1.0.14";
 /// ignores (in fact, "removes") any folder that is not listed, so the folder has
 /// to be registered there too.
 fn write_helper_extension(data_dir: &PathBuf) {
+    heal_corrupt_manifest(data_dir);
     let ext_root = extensions_dir(data_dir);
 
     // Drop any older copy so the server does not keep stale versions around.
@@ -1030,8 +1057,11 @@ fn write_helper_extension(data_dir: &PathBuf) {
     };
     entries.retain(|e| e.pointer("/identifier/id").and_then(|v| v.as_str()) != Some(HELPER_ID));
 
-    // Never publish a manifest that forgets the Claude Code extension.
-    if claude_extension_installed(data_dir)
+    // Never publish a manifest that forgets the Claude Code extension. This has
+    // to be the folder-only check: `claude_extension_installed` also requires a
+    // manifest entry, so it reads false in precisely the case guarded against
+    // here — entry already lost — and would wave the clobber through.
+    if extension_installed(data_dir, "anthropic.claude-code")
         && !entries.iter().any(|e| {
             e.pointer("/identifier/id").and_then(|v| v.as_str()) == Some("anthropic.claude-code")
         })
@@ -1151,6 +1181,66 @@ mod tests {
         )
         .unwrap();
         assert!(claude_extension_installed(&dir));
+    }
+
+    #[test]
+    fn never_publishes_a_manifest_that_forgets_claude_code() {
+        let dir = scratch("guard");
+        let ext = extensions_dir(&dir);
+        std::fs::create_dir_all(ext.join("anthropic.claude-code-2.1.0-darwin-arm64")).unwrap();
+
+        // The manifest has lost Claude Code while its folder is still there.
+        // Rewriting it now would drop Claude Code from the server's view — the
+        // exact clobber that produced a helper-only manifest in the wild.
+        std::fs::write(
+            ext.join("extensions.json"),
+            serde_json::to_string(&vec![entry(
+                "pkief.material-icon-theme",
+                "pkief.material-icon-theme-5.38.1",
+            )])
+            .unwrap(),
+        )
+        .unwrap();
+
+        write_helper_extension(&dir);
+
+        let got = ids(&dir);
+        assert!(
+            !got.contains(&HELPER_ID.to_string()),
+            "helper must not be published over a manifest missing Claude Code, got {got:?}"
+        );
+    }
+
+    #[test]
+    fn a_corrupt_manifest_is_moved_aside_so_the_installer_can_rebuild() {
+        let dir = scratch("heal");
+        let ext = extensions_dir(&dir);
+        // Exactly the shape seen in the wild: a short array plus a stale tail.
+        let torn = format!(
+            "{}{}",
+            serde_json::to_string(&vec![entry("a.b", "a.b-1.0.0")]).unwrap(),
+            r#"-40b0-8216-93ffb5a96b56","source":"gallery"}}]"#
+        );
+        std::fs::write(ext.join("extensions.json"), &torn).unwrap();
+
+        heal_corrupt_manifest(&dir);
+
+        assert!(!ext.join("extensions.json").exists(), "corrupt manifest should be cleared");
+        let kept = std::fs::read_to_string(ext.join("extensions.json.corrupt")).unwrap();
+        assert_eq!(kept, torn, "the broken copy should be kept for diagnosis");
+    }
+
+    #[test]
+    fn a_healthy_manifest_is_left_untouched_by_healing() {
+        let dir = scratch("heal-noop");
+        let ext = extensions_dir(&dir);
+        let good = serde_json::to_string(&vec![entry("a.b", "a.b-1.0.0")]).unwrap();
+        std::fs::write(ext.join("extensions.json"), &good).unwrap();
+
+        heal_corrupt_manifest(&dir);
+
+        assert_eq!(std::fs::read_to_string(ext.join("extensions.json")).unwrap(), good);
+        assert!(!ext.join("extensions.json.corrupt").exists());
     }
 
     #[test]

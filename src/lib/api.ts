@@ -137,6 +137,10 @@ export const api = {
   touch: (path: string) => invoke<Project[]>("touch_project", { path }),
   reveal: (path: string) => invoke<void>("reveal_in_file_manager", { path }),
   openTerminal: (path: string) => invoke<void>("open_in_terminal", { path }),
+  // Reveals VS Code's own integrated terminal (not an external Terminal.app
+  // window). Always opens — closing stays with Ctrl+J / the panel's X.
+  showVscodeTerminal: () =>
+    invoke<void>("send_vscode_command", { command: "showTerminal", sessionId: null }),
   discover: () => invoke<Discovered[]>("discover_vscode_projects"),
 
   // embedded VS Code server
