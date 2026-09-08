@@ -159,6 +159,18 @@ export default function App() {
     }
   }, []);
 
+  /** Tear down a project's editor without forgetting the project itself. */
+  const closeProject = useCallback(async (p: Project) => {
+    try {
+      await api.closeVscode(p.path);
+    } catch (e) {
+      setError(String(e));
+    }
+    setOpenIds((ids) => ids.filter((id) => id !== p.path));
+    // Only clear the pane if this was the project it was showing.
+    setActiveId((cur) => (cur === p.path ? null : cur));
+  }, []);
+
   const reorderProjects = useCallback(
     (order: string[]) => {
       // Reflect the drop immediately; the backend confirms the persisted order.
@@ -343,6 +355,7 @@ export default function App() {
             onColor={setProjectColor}
             onUploadIcon={uploadProjectIcon}
             onClearIcon={clearProjectIcon}
+            onCloseProject={closeProject}
             onAdd={addFolder}
             onImport={() => setShowImport(true)}
             onShowUsage={() => setShowUsage(true)}

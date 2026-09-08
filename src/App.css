@@ -414,6 +414,44 @@ body.dnd-active .row:hover:not(.dragging) {
   color: var(--live);
 }
 
+/* An open project's "open" badge becomes its close button on hover, so the row
+   needs no extra column and closed projects show no stray control. */
+.when-slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+}
+
+.close-proj {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text-faint);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.row:hover .when-slot .when,
+.row.selected .when-slot .when {
+  opacity: 0;
+}
+
+.row:hover .close-proj,
+.row.selected .close-proj {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.close-proj:hover {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
+
 .row-menu {
   color: transparent;
   font-size: 13px;

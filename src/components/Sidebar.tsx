@@ -21,6 +21,7 @@ interface Props {
   onColor: (p: Project, color: string | null) => void;
   onUploadIcon: (p: Project) => void;
   onClearIcon: (p: Project) => void;
+  onCloseProject: (p: Project) => void;
   onAdd: () => void;
   onImport: () => void;
   onShowUsage: () => void;
@@ -103,6 +104,7 @@ export function Sidebar({
   onColor,
   onUploadIcon,
   onClearIcon,
+  onCloseProject,
   onAdd,
   onImport,
   onShowUsage,
@@ -422,13 +424,24 @@ export function Sidebar({
                     <span className="name">{p.name}</span>
                     <span className="path">{parentPath(p.path)}</span>
                   </span>
-                  <span className={"when" + (openIds.has(p.path) ? " running" : "")}>
-                    {openIds.has(p.path)
-                      ? "open"
-                      : p.last_opened
-                        ? relativeTime(p.last_opened)
-                        : ""}
-                  </span>
+                  {openIds.has(p.path) ? (
+                    <span className="when-slot">
+                      <span className="when running">open</span>
+                      <button
+                        className="close-proj"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCloseProject(p);
+                        }}
+                        title={`Close ${p.name}`}
+                        aria-label={`Close ${p.name}`}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="when">{p.last_opened ? relativeTime(p.last_opened) : ""}</span>
+                  )}
                   <button
                     className={"row-menu" + (menu?.path === p.path ? " open" : "")}
                     onClick={(e) => {
