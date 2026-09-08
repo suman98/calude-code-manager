@@ -450,6 +450,7 @@ function Welcome({ onAdd, onImport }: { onAdd: () => void; onImport: () => void 
       </div>
       <p className="hint">
         <kbd>⌘</kbd>
+        <kbd>⌥</kbd>
         <kbd>⇧</kbd>
         <kbd>O</kbd> summons this window · <kbd>⌘</kbd>
         <kbd>K</kbd> jumps to search

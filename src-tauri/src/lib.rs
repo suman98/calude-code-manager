@@ -684,12 +684,68 @@ pub fn run() {
                 store: Mutex::new(store),
             });
 
-            // Global hotkey: summon the switcher from anywhere.
+            // macOS routes menu key equivalents before the focused view ever
+            // sees the key, so Tauri's default menu was eating ⌘Z, ⇧⌘Z and ⌘W
+            // and the embedded VS Code never received them. Rebuild the menu
+            // without those items; anything omitted here falls through to
+            // whichever webview has focus, which is what makes the editor's own
+            // keybindings work.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{AboutMetadata, MenuBuilder, SubmenuBuilder};
+
+                let handle = app.handle();
+                let app_menu = SubmenuBuilder::new(handle, "Claude Manager")
+                    .about(Some(AboutMetadata::default()))
+                    .separator()
+                    .services()
+                    .separator()
+                    .hide()
+                    .hide_others()
+                    .show_all()
+                    .separator()
+                    .quit()
+                    .build()?;
+
+                // Cut/Copy/Paste/Select All stay: WKWebView leans on these menu
+                // items for the clipboard, and they mean the same thing in the
+                // editor. Undo/Redo are deliberately absent.
+                let edit_menu = SubmenuBuilder::new(handle, "Edit")
+                    .cut()
+                    .copy()
+                    .paste()
+                    .select_all()
+                    .build()?;
+
+                // No Close Window: ⌘W belongs to the editor (close tab), not to
+                // tearing down the app's only window.
+                let window_menu = SubmenuBuilder::new(handle, "Window")
+                    .minimize()
+                    .maximize()
+                    .separator()
+                    .fullscreen()
+                    .build()?;
+
+                let menu = MenuBuilder::new(handle)
+                    .items(&[&app_menu, &edit_menu, &window_menu])
+                    .build()?;
+                if let Err(e) = handle.set_menu(menu) {
+                    eprintln!("could not install the app menu: {e}");
+                }
+            }
+
+            // Global hotkey: summon the switcher from anywhere. This is
+            // registered system-wide, so it wins even while the embedded editor
+            // has focus — it has to avoid anything VS Code binds. ⌘⇧O used to be
+            // used here, which shadowed "Go to Symbol in Editor".
             #[cfg(desktop)]
             {
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
                 let handle = app.handle().clone();
-                let summon = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyO);
+                let summon = Shortcut::new(
+                    Some(Modifiers::SUPER | Modifiers::ALT | Modifiers::SHIFT),
+                    Code::KeyO,
+                );
                 let _ = app
                     .global_shortcut()
                     .on_shortcut(summon, move |_app, _sc, event| {

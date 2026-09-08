@@ -35,24 +35,23 @@ Two implementation notes worth keeping:
 The React layer is only the sidebar and window chrome; it tells Rust where to
 place the VS Code webview and which project to show.
 
-## Claude / Code modes
+## What opens by default
 
-The header has a **Claude | Code** switch (`⌘E`):
+Selecting a project opens **plain VS Code** for that folder — file tree, tabs,
+status bar — and nothing else. The Claude Code panel is not opened for you.
 
-- **Claude** — activity bar, status bar, tabs and breadcrumbs hidden; side bar,
-  secondary side bar and panel closed; `claude-vscode.primaryEditor.open` gives
-  Claude Code the whole editor area.
-- **Code** — a normal editor: explorer, tabs, breadcrumbs and status bar back,
-  with the secondary side bar and panel closed so Copilot's chat pane stays out
-  of the way. Any open Claude tab stays open, so switching back is instant.
+Claude appears only when you ask for it: pick a chat in the Chats column, or hit
+**+ New**. That switches the window to a Claude-only layout (chrome collapsed,
+Claude owning the editor area).
 
-The mode is written to `easy-switch-mode.json` in the VS Code data dir *and*
-pushed as a command, so live windows react immediately and windows opened later
-come up in the same mode. VS Code settings are global, so the mode applies to
-every project window rather than per project.
+That choice does not stick. VS Code restores whatever editors a workspace had
+last, so a leftover Claude tab is closed explicitly on launch, and the stored
+mode is reset each time the server starts. Every launch begins on plain VS Code.
 
-The helper writes a small rolling diagnostic log to `easy-switch-helper.log`
-alongside it, which is what to read first if a layout ever fails to apply.
+The layout is applied by a small generated workspace extension,
+**easy-switch-layout**, which writes a rolling diagnostic log to
+`easy-switch-helper.log` in the VS Code data dir — the first thing to read if a
+layout or shortcut ever misbehaves.
 
 ## Chats and usage
 
@@ -101,10 +100,11 @@ tracked separately because they dwarf everything else.
   panes to resize (double-click a handle to snap it back to its minimum); widths
   and collapsed state persist. Collapse either side pane with the two buttons in
   the header or `⌘1` / `⌘2`.
-- **Claude / Code switch** — `⌘E`, or the segmented control in the header.
-- **Global hotkey** — `⌘⇧O` (Ctrl+Shift+O) summons the window from anywhere.
+- **Global hotkey** — `⌘⌥⇧O` summons the window from anywhere. It deliberately
+  avoids `⌘⇧O`, which VS Code binds to "Go to Symbol in Editor" — a global
+  shortcut fires even while the editor has focus.
 - **Keyboard** — `↑`/`↓` move, `↵` open, `⌘D` favorite, `⌘⌫` remove, `⌘K` or `/`
-  focus search, `⌘1` projects pane, `⌘2` chats pane, `⌘E` Claude/Code.
+  focus search, `⌘1` projects pane, `⌘2` chats pane.
 
 Dragging a split handle hides the embedded VS Code for the duration: it is a
 native webview layered over the page, so it would otherwise swallow the pointer

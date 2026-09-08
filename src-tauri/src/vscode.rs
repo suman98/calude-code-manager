@@ -178,6 +178,11 @@ pub fn ensure_server(app: AppHandle, vscode: State<Vscode>) {
         // first so the server we are about to spawn picks up this version.
         write_helper_extension(&data_dir);
 
+        // Every launch starts on plain VS Code. The Claude panel is opened only
+        // by an explicit action (a chat in the sidebar), and that choice should
+        // not persist into the next launch.
+        let _ = std::fs::remove_file(data_dir.join(MODE_FILE));
+
         // A server from a previous run keeps its old extension host alive and
         // would go on serving stale code, so retire it before starting ours.
         kill_orphan_server(&data_dir);
@@ -510,8 +515,8 @@ pub fn get_vscode_mode(app: AppHandle) -> String {
         .ok()
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
         .and_then(|v| v.get("mode").and_then(|m| m.as_str()).map(String::from))
-        .filter(|m| m == "code")
-        .unwrap_or_else(|| "claude".to_string())
+        .filter(|m| m == "claude")
+        .unwrap_or_else(|| "code".to_string())
 }
 
 #[tauri::command]
@@ -551,7 +556,7 @@ const HELPER_PACKAGE_JSON: &str = r#"{
   "displayName": "Claude Manager Layout",
   "description": "Opens Claude Code as the only surface in the window.",
   "publisher": "easyswitch",
-  "version": "1.0.19",
+  "version": "1.0.21",
   "engines": { "vscode": "^1.94.0" },
   "main": "./extension.js",
   "activationEvents": ["onStartupFinished"],
@@ -700,12 +705,14 @@ function readTheme() {
   }
 }
 
+// Plain VS Code is the default surface; the Claude panel only opens when the
+// user asks for it (the Claude/Code switch, + New, or opening a past chat).
 function readMode() {
   try {
     const raw = JSON.parse(fs.readFileSync(MODE_FILE, "utf8"));
-    return raw && raw.mode === "code" ? "code" : "claude";
+    return raw && raw.mode === "claude" ? "claude" : "code";
   } catch (_) {
-    return "claude";
+    return "code";
   }
 }
 
@@ -748,16 +755,14 @@ async function applyMode(mode) {
   const changed = await applySettings(mode === "code" ? CODE_LAYOUT : CLAUDE_LAYOUT);
   log(`applyMode ${mode} changed=${changed}`);
   if (mode === "code") {
-    // Standard chrome (activity bar, tabs) stays — only the Explorer panel
-    // starts collapsed, so the Claude tab does not compete for width with the
-    // file tree. Code mode still opens on Claude Code initially, as a normal
-    // tab beside whatever else is open, not the exclusive surface Claude mode is.
+    // Plain VS Code for the project: file tree open, no Claude panel. VS Code
+    // restores whatever editors a workspace had last, so a Claude tab left over
+    // from an earlier session has to be closed explicitly — otherwise it comes
+    // back on every launch and the app looks like it opened Claude on purpose.
     await run("workbench.action.closeAuxiliaryBar");
     await run("workbench.action.closePanel");
-    await run("workbench.action.closeSidebar");
-    const opened = await openClaude(false);
-    log(`code mode claude tab=${opened}`);
-    await run("workbench.action.closeSidebar");
+    await closeClaudeTabs();
+    await run("workbench.view.explorer");
   } else {
     await collapseChrome();
     await openClaude();
@@ -777,6 +782,24 @@ function claudeTabOpen() {
     );
   } catch (_) {
     return false;
+  }
+}
+
+async function closeClaudeTabs() {
+  try {
+    const groups = vscode.window.tabGroups;
+    const claude = [];
+    for (const g of groups.all) {
+      for (const t of g.tabs) {
+        if (String(t.label || "").toLowerCase().includes("claude")) claude.push(t);
+      }
+    }
+    if (claude.length) {
+      await groups.close(claude, true);
+      log(`closed ${claude.length} restored claude tab(s)`);
+    }
+  } catch (e) {
+    log(`closeClaudeTabs failed: ${e}`);
   }
 }
 
@@ -892,6 +915,12 @@ async function activate(context) {
   }
 
   watchCommands(context);
+
+  // If shortcuts ever appear dead, this says whether the editor even believes
+  // it has focus when the key is pressed.
+  context.subscriptions.push(
+    vscode.window.onDidChangeWindowState((st) => log(`window focused=${st.focused}`)),
+  );
 
   // Theme before layout, so a window never paints in the wrong palette while
   // the Claude surface is still being assembled.
@@ -1100,8 +1129,8 @@ const COMMAND_FILE: &str = "easy-switch-cmd.json";
 const MODE_FILE: &str = "easy-switch-mode.json";
 const THEME_FILE: &str = "easy-switch-theme.json";
 const HELPER_ID: &str = "easyswitch.easy-switch-layout";
-const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.19";
-const HELPER_VERSION: &str = "1.0.19";
+const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.21";
+const HELPER_VERSION: &str = "1.0.21";
 
 /// Drop in a tiny workspace extension that hides the IDE chrome and opens
 /// Claude Code in the editor area on every window.
