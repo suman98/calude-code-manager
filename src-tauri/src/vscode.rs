@@ -172,6 +172,16 @@ pub fn ensure_server(app: AppHandle, vscode: State<Vscode>) {
         let data_dir = server_data_dir(&app);
         seed_settings(&data_dir);
 
+        // A server reads its extensions once, at startup. Writing the helper
+        // after the server is up therefore only takes effect on the *next*
+        // launch — every change to it needed two restarts to appear. Write it
+        // first so the server we are about to spawn picks up this version.
+        write_helper_extension(&data_dir);
+
+        // A server from a previous run keeps its old extension host alive and
+        // would go on serving stale code, so retire it before starting ours.
+        kill_orphan_server(&data_dir);
+
         vscode.set_status(
             &app,
             "starting",
@@ -230,6 +240,7 @@ pub fn ensure_server(app: AppHandle, vscode: State<Vscode>) {
             });
         }
 
+        remember_server_pid(&data_dir, child.id());
         {
             *vscode.running.lock().unwrap() = Some(Running { child, port });
         }
@@ -540,7 +551,7 @@ const HELPER_PACKAGE_JSON: &str = r#"{
   "displayName": "Claude Manager Layout",
   "description": "Opens Claude Code as the only surface in the window.",
   "publisher": "easyswitch",
-  "version": "1.0.17",
+  "version": "1.0.19",
   "engines": { "vscode": "^1.94.0" },
   "main": "./extension.js",
   "activationEvents": ["onStartupFinished"],
@@ -753,6 +764,10 @@ async function applyMode(mode) {
     await sleep(300);
     await collapseChrome();
   }
+  // Leave the keyboard somewhere that listens for it. Closing the sidebar and
+  // panel above can otherwise strand focus on a view that is no longer visible,
+  // which reads as "the editor will not accept typing".
+  await run("workbench.action.focusActiveEditorGroup");
 }
 
 function claudeTabOpen() {
@@ -778,16 +793,28 @@ async function claudeReady() {
 
 // `exclusive` clears the editor area first — right when Claude Code is the whole
 // surface, wrong in code mode where it would close the user's open files.
+//
+// Opening is issued at most twice on purpose. This used to retry for thirty
+// seconds, re-running `primaryEditor.open` roughly every second whenever a
+// Claude tab could not be detected — and every one of those calls rips keyboard
+// focus out of whatever the user is typing in. Waiting for the extension to
+// register its command is fine (that has no side effects); repeatedly opening
+// editors underneath someone is not.
 async function openClaude(exclusive = true) {
-  for (let i = 0; i < 60; i++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     if (claudeTabOpen()) return true;
-    if (await claudeReady()) {
-      if (exclusive) await run("workbench.action.closeAllEditors");
-      await run("claude-vscode.primaryEditor.open");
-      await sleep(600);
-      if (claudeTabOpen()) return true;
+
+    let ready = false;
+    for (let i = 0; i < 20 && !ready; i++) {
+      ready = await claudeReady();
+      if (!ready) await sleep(250);
     }
-    await sleep(500);
+    if (!ready) return false;
+
+    if (exclusive) await run("workbench.action.closeAllEditors");
+    await run("claude-vscode.primaryEditor.open");
+    await sleep(800);
+    if (claudeTabOpen()) return true;
   }
   return false;
 }
@@ -893,6 +920,42 @@ fn extensions_dir(data_dir: &PathBuf) -> PathBuf {
 }
 
 /// The VS Code server binary that `serve-web` downloads on first run.
+const PID_FILE: &str = "serve-web.pid";
+
+/// `serve-web` outlives the app whenever it is not shut down cleanly — a force
+/// quit, a crash, a dev-mode restart. The orphan keeps answering with the
+/// extension host it loaded originally, so a rebuilt helper extension never
+/// takes effect. Retire the previous run's server before starting a new one.
+fn kill_orphan_server(data_dir: &PathBuf) {
+    let path = data_dir.join(PID_FILE);
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let _ = std::fs::remove_file(&path);
+    let Ok(pid) = raw.trim().parse::<u32>() else {
+        return;
+    };
+
+    // Only kill it if it is still the server we started: pids get recycled, and
+    // killing an unrelated process would be far worse than a stale editor.
+    let Ok(out) = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "command="])
+        .output()
+    else {
+        return;
+    };
+    let cmdline = String::from_utf8_lossy(&out.stdout);
+    if !cmdline.contains("serve-web") {
+        return;
+    }
+    eprintln!("[easy-switch] retiring orphaned serve-web (pid {pid})");
+    let _ = Command::new("kill").arg(pid.to_string()).status();
+}
+
+fn remember_server_pid(data_dir: &PathBuf, pid: u32) {
+    let _ = std::fs::write(data_dir.join(PID_FILE), pid.to_string());
+}
+
 fn downloaded_server_bin(data_dir: &PathBuf) -> Option<PathBuf> {
     let root = data_dir.join("cli").join("serve-web");
     let entries = std::fs::read_dir(root).ok()?;
@@ -1037,8 +1100,8 @@ const COMMAND_FILE: &str = "easy-switch-cmd.json";
 const MODE_FILE: &str = "easy-switch-mode.json";
 const THEME_FILE: &str = "easy-switch-theme.json";
 const HELPER_ID: &str = "easyswitch.easy-switch-layout";
-const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.17";
-const HELPER_VERSION: &str = "1.0.17";
+const HELPER_FOLDER: &str = "easyswitch.easy-switch-layout-1.0.19";
+const HELPER_VERSION: &str = "1.0.19";
 
 /// Drop in a tiny workspace extension that hides the IDE chrome and opens
 /// Claude Code in the editor area on every window.
