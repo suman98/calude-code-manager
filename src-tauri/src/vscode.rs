@@ -356,7 +356,7 @@ pub fn mount_vscode(
         if let Some(prev) = visible.as_ref() {
             if prev != &path {
                 if let Some(v) = views.get(prev) {
-                    let _ = v.hide();
+                    park(v);
                 }
             }
         }
@@ -385,10 +385,74 @@ pub fn mount_vscode(
     // out of the branches above is deliberate: when only the reuse branch
     // focused, a project opened for the first time came up unfocused and its
     // keystrokes went to the app window instead of the editor.
-    if let Some(v) = views.get(&path) {
-        let _ = v.set_focus();
-    }
+    // The lock has to go before focusing: the handover re-reads this state.
+    drop(views);
+    take_first_responder(&app, &container, &path);
     Ok(())
+}
+
+/// Somewhere far outside the window, where a webview neither draws nor takes
+/// clicks. See `park` for why this is used instead of hiding.
+const PARKED: f64 = -32000.0;
+
+/// Move a webview out of sight without hiding it.
+///
+/// `hide()` is `setHidden(true)`, and AppKit lets a hidden view keep being the
+/// window's first responder — so the project switched away from went on
+/// receiving every keystroke while the newly shown one could not take over.
+/// Tauri exposes no way to make a webview resign (wry's `focus_parent` is not
+/// surfaced, and `Window::set_focus` only raises the window, leaving the first
+/// responder untouched), so the inactive project stays visible and simply sits
+/// off-screen, where handing focus to its replacement behaves normally.
+fn park(view: &Webview) {
+    let _ = view.set_position(LogicalPosition::new(PARKED, PARKED));
+}
+
+/// Move the window's first responder onto `view`.
+///
+/// Hiding a webview does not make it resign first responder — `hide()` is just
+/// `setHidden(true)` — so the project we switched *away* from keeps receiving
+/// keystrokes, and asking the newly shown one to focus does not dislodge it.
+/// Parking focus on the container first gives AppKit a clean handover.
+///
+/// The retry exists because a webview that was only just created, or only just
+/// unhidden, may not be in the window's view hierarchy yet, and AppKit refuses
+/// first responder to a view that is not.
+fn take_first_responder(app: &AppHandle, container: &tauri::Window, path: &str) {
+    let focus_now = |vscode: &Vscode| {
+        let views = vscode.views.lock().unwrap();
+        // Only ever focus the view that is actually on screen: a fast switch
+        // away would otherwise hand the keyboard back to a hidden project.
+        let still_visible = vscode.visible.lock().unwrap().as_deref() == Some(path);
+        if !still_visible {
+            return false;
+        }
+        if let Some(v) = views.get(path) {
+            let _ = container.set_focus();
+            let _ = v.set_focus();
+            let _ = v.eval("window.focus()");
+        }
+        true
+    };
+    focus_now(&app.state::<Vscode>());
+
+    let app = app.clone();
+    let path = path.to_string();
+    thread::spawn(move || {
+        for delay in [120u64, 400] {
+            thread::sleep(Duration::from_millis(delay));
+            let vscode = app.state::<Vscode>();
+            let views = vscode.views.lock().unwrap();
+            if vscode.visible.lock().unwrap().as_deref() != Some(path.as_str()) {
+                return;
+            }
+            if let (Some(container), Some(v)) = (app.get_window("main"), views.get(&path)) {
+                let _ = container.set_focus();
+                let _ = v.set_focus();
+                let _ = v.eval("window.focus()");
+            }
+        }
+    });
 }
 
 /// Hand keyboard focus back to the embedded editor.
@@ -397,12 +461,13 @@ pub fn mount_vscode(
 /// focuses it, and a webview that has not finished loading does not reliably
 /// take the keyboard, so the frontend re-asserts focus once it has settled.
 #[tauri::command]
-pub fn focus_vscode(vscode: State<Vscode>) {
-    let views = vscode.views.lock().unwrap();
-    if let Some(p) = vscode.visible.lock().unwrap().as_ref() {
-        if let Some(v) = views.get(p) {
-            let _ = v.set_focus();
-        }
+pub fn focus_vscode(app: AppHandle, vscode: State<Vscode>) {
+    let Some(container) = app.get_window("main") else {
+        return;
+    };
+    let path = vscode.visible.lock().unwrap().clone();
+    if let Some(p) = path {
+        take_first_responder(&app, &container, &p);
     }
 }
 
@@ -422,7 +487,7 @@ pub fn hide_vscode(vscode: State<Vscode>) {
     let views = vscode.views.lock().unwrap();
     if let Some(p) = vscode.visible.lock().unwrap().take() {
         if let Some(v) = views.get(&p) {
-            let _ = v.hide();
+            park(v);
         }
     }
 }
@@ -913,6 +978,15 @@ async function activate(context) {
     await run("workbench.action.reloadWindow");
     return;
   }
+
+  // Diagnostic: says whether this project's webview actually receives system
+  // focus. If switching projects never logs `focused=true` here, the keyboard
+  // never reached this window at all, and the problem is native focus rather
+  // than anything inside the editor.
+  log(`windowState focused=${vscode.window.state.focused}`);
+  context.subscriptions.push(
+    vscode.window.onDidChangeWindowState((st) => log(`windowState focused=${st.focused}`)),
+  );
 
   watchCommands(context);
 
