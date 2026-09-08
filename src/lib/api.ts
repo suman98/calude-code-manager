@@ -153,6 +153,7 @@ export const api = {
   mountVscode: (path: string, b: Rect) => invoke<void>("mount_vscode", { path, ...b }),
   setVscodeBounds: (b: Rect) => invoke<void>("set_vscode_bounds", { ...b }),
   hideVscode: () => invoke<void>("hide_vscode"),
+  focusVscode: () => invoke<void>("focus_vscode"),
   closeVscode: (path: string) => invoke<void>("close_vscode", { path }),
 
   // chats + usage, read from Claude Code's own transcript store

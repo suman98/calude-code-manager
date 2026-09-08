@@ -352,7 +352,6 @@ pub fn mount_vscode(
             let _ = v.set_position(pos);
             let _ = v.set_size(size);
             let _ = v.show();
-            let _ = v.set_focus();
         }
         None => {
             let builder = WebviewBuilder::new(
@@ -362,10 +361,33 @@ pub fn mount_vscode(
             let view = container
                 .add_child(builder, pos, size)
                 .map_err(|e| e.to_string())?;
-            views.insert(path, view);
+            views.insert(path.clone(), view);
         }
     }
+
+    // Focus whichever view is now showing, however it got here. Keeping this
+    // out of the branches above is deliberate: when only the reuse branch
+    // focused, a project opened for the first time came up unfocused and its
+    // keystrokes went to the app window instead of the editor.
+    if let Some(v) = views.get(&path) {
+        let _ = v.set_focus();
+    }
     Ok(())
+}
+
+/// Hand keyboard focus back to the embedded editor.
+///
+/// A freshly created child webview is still loading when `mount_vscode`
+/// focuses it, and a webview that has not finished loading does not reliably
+/// take the keyboard, so the frontend re-asserts focus once it has settled.
+#[tauri::command]
+pub fn focus_vscode(vscode: State<Vscode>) {
+    let views = vscode.views.lock().unwrap();
+    if let Some(p) = vscode.visible.lock().unwrap().as_ref() {
+        if let Some(v) = views.get(p) {
+            let _ = v.set_focus();
+        }
+    }
 }
 
 #[tauri::command]

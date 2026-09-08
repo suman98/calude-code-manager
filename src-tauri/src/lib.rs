@@ -725,6 +725,7 @@ pub fn run() {
             vscode::mount_vscode,
             vscode::set_vscode_bounds,
             vscode::hide_vscode,
+            vscode::focus_vscode,
             vscode::close_vscode,
             vscode::send_vscode_command,
             vscode::set_vscode_mode,

@@ -80,7 +80,15 @@ export function VscodeView({
       return;
     }
     const raf = requestAnimationFrame(() => pushBounds(true));
-    return () => cancelAnimationFrame(raf);
+    // A webview created just now is still loading when Rust focuses it, and one
+    // that has not finished loading does not take the keyboard — so ask again
+    // once it has settled. Without this, a project opened for the first time
+    // swallows typing: the keys go to this window, not the editor.
+    const settle = window.setTimeout(() => api.focusVscode().catch(() => {}), 700);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(settle);
+    };
   }, [shouldShow, activeId, pushBounds]);
 
   useEffect(() => {
